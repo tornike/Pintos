@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -23,6 +24,9 @@
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
+
+/* Stored sleeping threads. */
+static struct list wait_list;
 
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
@@ -71,6 +75,10 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+bool compare_wait_times (const struct list_elem *a, 
+                        const struct list_elem *b,
+                        void* aux);
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -91,6 +99,7 @@ thread_init (void)
 
   lock_init (&tid_lock);
   list_init (&ready_list);
+  list_init (&wait_list);
   list_init (&all_list);
 
   /* Set up a thread structure for the running thread. */
@@ -240,6 +249,24 @@ thread_unblock (struct thread *t)
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
   intr_set_level (old_level);
+}
+
+bool compare_wait_times (const struct list_elem *a, 
+                        const struct list_elem *b,
+                        UNUSED void* aux)
+{
+  int64_t first = list_entry (a, struct thread, elem)->tick_till_wait;
+  int64_t second = list_entry (b, struct thread, elem)->tick_till_wait;
+  return first < second;
+}
+
+/* Puts current thread to wait list. */
+void thread_sleep(int64_t tick) {
+  struct thread* t = thread_current();
+  t->status = THREAD_BLOCKED;
+  t->tick_till_wait = tick;
+  list_insert_ordered (&wait_list, &(t->elem), compare_wait_times, NULL);
+  schedule ();
 }
 
 /* Returns the name of the running thread. */
@@ -463,6 +490,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->tick_till_wait = 0;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -540,6 +568,17 @@ thread_schedule_tail (struct thread *prev)
       ASSERT (prev != cur);
       palloc_free_page (prev);
     }
+}
+
+void threads_check_sleeping (int64_t ticks) {
+  struct list_elem *e = list_begin(&wait_list);
+  while (e != NULL && e != list_end(&wait_list)) {
+    struct thread *th = list_entry (e, struct thread, elem);
+    if (ticks >= th->tick_till_wait) {
+      e = list_remove(e);
+      thread_unblock(th);
+    } else break;
+  }
 }
 
 /* Schedules a new process.  At entry, interrupts must be off and

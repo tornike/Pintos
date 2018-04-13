@@ -114,7 +114,7 @@ extern bool thread_mlfqs;
 void thread_init (void);
 void thread_start (void);
 
-void thread_tick (void);
+void thread_tick (int64_t);
 void thread_print_stats (void);
 
 typedef void thread_func (void *aux);
@@ -124,9 +124,6 @@ void thread_block (void);
 void thread_unblock (struct thread *);
 
 void thread_sleep(int64_t);
-
-/* Adds sleeping threads to ready_list if waiting time elapsed */
-void threads_check_sleeping (int64_t ticks);
 
 struct thread *thread_current (void);
 tid_t thread_tid (void);

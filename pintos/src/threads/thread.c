@@ -129,7 +129,7 @@ thread_start (void)
 /* Called by the timer interrupt handler at each timer tick.
    Thus, this function runs in an external interrupt context. */
 void
-thread_tick (void)
+thread_tick (int64_t total_ticks)
 {
   struct thread *t = thread_current ();
 
@@ -142,6 +142,19 @@ thread_tick (void)
 #endif
   else
     kernel_ticks++;
+
+  /* Adds sleeping threads to ready_list if waiting time elapsed. */
+  enum intr_level old_level;
+  old_level = intr_disable();
+  struct list_elem *e = list_begin(&wait_list);
+  while (e != NULL && e != list_end(&wait_list)) {
+    struct thread *th = list_entry (e, struct thread, elem);
+    if (total_ticks >= th->tick_till_wait) {
+      e = list_remove(e);
+      thread_unblock(th);
+    } else break;
+  }
+  intr_set_level(old_level);
 
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
@@ -568,17 +581,6 @@ thread_schedule_tail (struct thread *prev)
       ASSERT (prev != cur);
       palloc_free_page (prev);
     }
-}
-
-void threads_check_sleeping (int64_t ticks) {
-  struct list_elem *e = list_begin(&wait_list);
-  while (e != NULL && e != list_end(&wait_list)) {
-    struct thread *th = list_entry (e, struct thread, elem);
-    if (ticks >= th->tick_till_wait) {
-      e = list_remove(e);
-      thread_unblock(th);
-    } else break;
-  }
 }
 
 /* Schedules a new process.  At entry, interrupts must be off and

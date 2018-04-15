@@ -4,7 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
-#include "threads/synch.h"
+#include "threads/synch.h"	
 #include "threads/fixed-point.h"
 
 /* States in a thread's life cycle. */
@@ -94,8 +94,9 @@ struct thread
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
-
-    int64_t tick_till_wait;            /* Tick till thread should sleep */
+    struct list locks;
+    int64_t time;
+    int donation;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -123,14 +124,13 @@ tid_t thread_create (const char *name, int priority, thread_func *, void *);
 void thread_block (void);
 void thread_unblock (struct thread *);
 
-void thread_sleep(int64_t);
-
 struct thread *thread_current (void);
 tid_t thread_tid (void);
 const char *thread_name (void);
 
 void thread_exit (void) NO_RETURN;
 void thread_yield (void);
+void thread_sleep(int64_t);
 
 /* Performs some operation on thread t, given auxiliary data AUX. */
 typedef void thread_action_func (struct thread *t, void *aux);
@@ -138,6 +138,9 @@ void thread_foreach (thread_action_func *, void *);
 
 int thread_get_priority (void);
 void thread_set_priority (int);
+bool thread_cmp_priority (const struct list_elem *, const struct list_elem *, void *);
+void thread_donate_priority(struct thread *, int);
+void thread_undonate_priority(struct thread *, int);
 
 int thread_get_nice (void);
 void thread_set_nice (int);

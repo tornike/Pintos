@@ -99,8 +99,8 @@ struct thread
 
     /* Donation */
     int saved_priority;
-    struct list locks;                  /* Locks which have waiters and are holded by this thread */
-    struct lock* block_lock;             /* Lock on which current thread is waiting */
+    struct list locks;                  /* Locks on which this thread got donation */
+    struct lock* block_lock;            /* Lock on which current thread is waiting */
 
 
 

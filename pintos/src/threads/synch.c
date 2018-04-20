@@ -259,7 +259,6 @@ lock_release (struct lock *lock)
   if (!thread_mlfqs) {
     enum intr_level old_level;
     old_level = intr_disable();
-    struct thread* curr = thread_current();
     if (lock->holders_donor != NULL) {
       list_remove(&lock->elem);
       thread_undonate_priority();

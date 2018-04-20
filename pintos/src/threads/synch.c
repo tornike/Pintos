@@ -189,7 +189,7 @@ lock_init (struct lock *lock)
   ASSERT (lock != NULL);
 
   lock->holder = NULL;
-  lock->donor = NULL;
+  lock->holders_donor = NULL;
   sema_init (&lock->semaphore, 1);
 }
 
@@ -208,16 +208,20 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
-  /* Check if the thread should donate its priority */
-  enum intr_level old_level;
-  old_level = intr_disable();
-  struct thread* curr = thread_current ();
-  if (lock->holder != NULL && lock->holder->priority < curr->priority) {
-    thread_donate_priority(curr, lock);
+  if (!thread_mlfqs) {
+    /* Check if the thread should donate its priority */
+    enum intr_level old_level;
+    old_level = intr_disable();
+    struct thread* curr = thread_current ();
+    if (lock->holder != NULL && lock->holder->priority < curr->priority) {
+      thread_donate_priority(curr, lock);
+    }
+    curr->block_lock = lock;
+    intr_set_level(old_level);
   }
-  intr_set_level(old_level);
-
+  
   sema_down (&lock->semaphore);
+  thread_current ()->block_lock = NULL;
   lock->holder = thread_current ();
 }
 
@@ -252,15 +256,17 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  enum intr_level old_level;
-  old_level = intr_disable();
-  struct thread* curr = thread_current();
-  if (lock->donor != NULL) {
-    list_remove(&lock->elem);
-    thread_undonate_priority();
-    lock->donor = NULL;
+  if (!thread_mlfqs) {
+    enum intr_level old_level;
+    old_level = intr_disable();
+    struct thread* curr = thread_current();
+    if (lock->holders_donor != NULL) {
+      list_remove(&lock->elem);
+      thread_undonate_priority();
+      lock->holders_donor = NULL;
+    }
+    intr_set_level(old_level);
   }
-  intr_set_level(old_level);
   
   lock->holder = NULL;
   sema_up (&lock->semaphore);

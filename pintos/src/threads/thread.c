@@ -143,14 +143,16 @@ thread_tick (int64_t total_ticks)
   /* Adds sleeping threads to ready_list if waiting time elapsed. */
   enum intr_level old_level;
   old_level = intr_disable();
-  struct list_elem *e = list_begin(&wait_list);
+
+  struct list_elem* e = list_begin(&wait_list);
   while (e != list_end(&wait_list)) {
-    struct thread *t = list_entry (e, struct thread, elem);
+    struct thread* t = list_entry (e, struct thread, elem);
     if (total_ticks >= t->tick_till_wait) {
       e = list_remove(e);
       thread_unblock(t);
     } else break;
   }
+
   intr_set_level(old_level);
 
   /* Enforce preemption. */
@@ -411,7 +413,7 @@ thread_set_priority (int new_priority)
 {
   struct thread* curr = thread_current();
 
-  if (curr->saved_priority != -1) // There is no donation
+  if (curr->saved_priority != -1) // There is donation
     curr->saved_priority = new_priority;
   else {
     int old_priority = thread_get_priority();
@@ -424,7 +426,7 @@ static bool
 lock_donor_cmp (const struct list_elem* a, const struct list_elem* b, UNUSED void* aux) {
   struct lock* f = list_entry(a, struct lock, elem);
   struct lock* s = list_entry(b, struct lock, elem);
-  return f->donor->priority > s->donor->priority;
+  return f->holders_donor->priority > s->holders_donor->priority;
 }
 
 void thread_donate_priority(struct thread* t, struct lock* lock)
@@ -434,16 +436,18 @@ void thread_donate_priority(struct thread* t, struct lock* lock)
   if (holder->saved_priority == -1)
     holder->saved_priority = holder->priority;
   holder->priority = t->priority;
-  if (lock->donor == NULL) {
-    lock->donor = t;
-    list_insert_ordered(&holder->locks, &lock->elem, lock_donor_cmp, NULL);
-  } else {
-    lock->donor = t;
-    // remove from list and add other
-    list_sort(&holder->locks, lock_donor_cmp, NULL);
-  }
+  
+  if (lock->holders_donor != NULL)
+    list_remove(&lock->elem);
+    
+  lock->holders_donor = t;
+  list_insert_ordered(&holder->locks, &lock->elem, lock_donor_cmp, NULL);
 
-  list_sort(&ready_list, thread_cmp_priority, NULL);
+  list_remove(&holder->elem);
+  list_insert_ordered(&ready_list, &holder->elem, thread_cmp_priority, NULL);
+
+  if (holder->block_lock != NULL)
+    thread_donate_priority(holder, holder->block_lock);
 }
 
 void thread_undonate_priority()
@@ -453,7 +457,7 @@ void thread_undonate_priority()
     curr->priority = curr->saved_priority;
     curr->saved_priority = -1;
   } else {
-    curr->priority = list_entry(list_pop_front(&curr->locks), struct lock, elem)->donor->priority;
+    curr->priority = list_entry(list_pop_front(&curr->locks), struct lock, elem)->holders_donor->priority;
   }
 }
 
@@ -576,6 +580,7 @@ init_thread (struct thread *t, const char *name, int priority)
 
   list_init(&t->locks);
   t->saved_priority = -1;
+  t->block_lock = NULL;
 
   enum intr_level old_level = intr_disable ();  
   list_push_back (&all_list, &t->allelem);

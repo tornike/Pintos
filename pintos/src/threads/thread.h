@@ -96,8 +96,12 @@ struct thread
     struct list_elem elem;              /* List element. */
 
     int64_t tick_till_wait;
-    struct list locks;                  /* Locks holded by this thread. */
+
+    /* Donation */
     int saved_priority;
+    struct list locks;                  /* Locks which have waiters and are holded by this thread */
+    struct lock* block_lock;             /* Lock on which current thread is waiting */
+
 
 
 #ifdef USERPROG

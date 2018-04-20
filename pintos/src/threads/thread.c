@@ -171,6 +171,10 @@ thread_tick (int64_t total_ticks)
       fixed_point_t c = fix_div(fix_int(1), fix_int(60));
       load_avg = fix_add(fix_mul(load_avg, b), fix_mul(fix_int(list_size(&ready_list)), c));
     }
+
+    if (total_ticks % 4 == 0) {
+      t->priority = fix_round(fix_sub(fix_sub(fix_int(PRI_MAX), fix_div(t->recent_cpu, fix_int(4))), fix_mul(fix_int(t->nice), fix_int(2))));
+    }
   }
   intr_set_level(old_level);
 
@@ -215,6 +219,9 @@ thread_create (const char *name, int priority,
 
   ASSERT (function != NULL);
 
+  if (thread_mlfqs) 
+    priority = PRI_DEFAULT;
+
   /* Allocate thread. */
   t = palloc_get_page (PAL_ZERO);
   if (t == NULL)
@@ -248,7 +255,7 @@ thread_create (const char *name, int priority,
 
   /* Check priorities. */
   if (thread_current()->priority < t->priority )
-        thread_yield();
+    thread_yield();
 
   return tid;
 }

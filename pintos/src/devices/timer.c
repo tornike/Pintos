@@ -88,6 +88,19 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
+/* Checks if a second has passed since the last time. */
+bool 
+timer_should_update() 
+{
+  return ticks % TIMER_FREQ == 0;
+}
+
+/* Checks if a second has passed since the last time. */
+bool
+timer_should_update_load_avg() {
+  return ticks % 100 == 0;
+}
+
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void

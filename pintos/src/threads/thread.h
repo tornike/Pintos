@@ -98,7 +98,8 @@ struct thread
     int64_t tick_till_wait;
     struct list locks;                  /* Locks holded by this thread. */
     int saved_priority;
-
+    int nice;
+    fixed_point_t recent_cpu;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */

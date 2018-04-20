@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "devices/timer.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -40,6 +41,8 @@ static struct thread *initial_thread;
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
+/* Load average. */
+static fixed_point_t load_avg;
 
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame
@@ -103,6 +106,9 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+
+  /* Initialize system-wide load average variable. */
+  load_avg = fix_int(0);
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -124,7 +130,6 @@ thread_start (void)
 
 /* Called by the timer interrupt handler at each timer tick.
    Thus, this function runs in an external interrupt context. */
-
 void
 thread_tick (int64_t total_ticks)
 {
@@ -150,6 +155,22 @@ thread_tick (int64_t total_ticks)
       e = list_remove(e);
       thread_unblock(t);
     } else break;
+  }
+
+  if (thread_mlfqs) {
+    /* If running thread is not idle increment recent_cpu by one on each tick. */
+    if (t != idle_thread) {
+      t->recent_cpu = fix_add(t->recent_cpu, fix_int(1));  
+    }
+
+    if (timer_should_update()) {
+      fixed_point_t a = fix_div(fix_scale(load_avg, 2), fix_add(fix_scale(load_avg, 2), fix_int(1)));
+      t->recent_cpu = fix_add(fix_mul(a, t->recent_cpu), fix_int(t->nice));
+
+      fixed_point_t b = fix_div(fix_int(59), fix_int(60));
+      fixed_point_t c = fix_div(fix_int(1), fix_int(60));
+      load_avg = fix_add(fix_mul(load_avg, b), fix_mul(fix_int(list_size(&ready_list)), c));
+    }
   }
   intr_set_level(old_level);
 
@@ -459,33 +480,30 @@ void thread_undonate_priority()
 
 /* Sets the current thread's nice value to NICE. */
 void
-thread_set_nice (int nice UNUSED)
+thread_set_nice (int nice)
 {
-  /* Not yet implemented. */
+  thread_current()->nice = nice;
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void)
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current()->nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void)
 {
-  /* Not yet implemented. */
-  return 0;
+  return fix_round(fix_scale(load_avg, 100));
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void)
 {
-  /* Not yet implemented. */
-  return 0;
+  return fix_round(fix_scale(thread_current()->recent_cpu, 100));
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.

@@ -144,9 +144,9 @@ thread_tick (int64_t total_ticks)
   enum intr_level old_level;
   old_level = intr_disable();
   struct list_elem *e = list_begin(&wait_list);
-  while (e != NULL && e != list_end(&wait_list)) {
+  while (e != list_end(&wait_list)) {
     struct thread *t = list_entry (e, struct thread, elem);
-    if (total_ticks >= t->time) {
+    if (total_ticks >= t->tick_till_wait) {
       e = list_remove(e);
       thread_unblock(t);
     } else break;
@@ -323,14 +323,14 @@ thread_exit (void)
 #endif
 
   // Free the locks.
-  struct lock *lock;
-  struct list_elem *elem = list_begin(&thread_current()->locks);
-  while (elem != list_end(&thread_current()->locks))
-  {
-    lock = list_entry(elem, struct lock, lock_elem);
-    lock_release(lock);
-    elem = list_remove(elem);
-  }
+  //struct lock *lock;
+  //struct list_elem *elem = list_begin(&thread_current()->locks);
+  //while (elem != list_end(&thread_current()->locks))
+  //{
+  //  lock = list_entry(elem, struct lock, lock_elem);
+  //  lock_release(lock);
+  //  elem = list_remove(elem);
+  //}
 
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
@@ -360,20 +360,24 @@ thread_yield (void)
   intr_set_level (old_level);
 }
 
-bool 
-compare_wait_times (const struct list_elem *a, const struct list_elem *b, UNUSED void* aux)
+static bool 
+thread_cmp_wait_times (const struct list_elem *a, const struct list_elem *b, UNUSED void* aux)
 {
-  int64_t first = list_entry (a, struct thread, elem)->time;
-  int64_t second = list_entry (b, struct thread, elem)->time;
+  int64_t first = list_entry (a, struct thread, elem)->tick_till_wait;
+  int64_t second = list_entry (b, struct thread, elem)->tick_till_wait;
   return first < second;
 }
 
-/* Puts current thread to wait list. */
-void thread_sleep(int64_t tick) {
-  struct thread* t = thread_current();
-  t->status = THREAD_BLOCKED;
-  t->time = tick;
-  list_insert_ordered(&wait_list, &(t->elem), compare_wait_times, NULL);
+/*
+ * Blocks current thread for wait_time ticks and
+ * Puts it in wait list.
+ * This function must be called with interrupts off.
+ */
+void thread_sleep(int64_t wait_time) {
+  struct thread* curr = thread_current();
+  curr->status = THREAD_BLOCKED;
+  curr->tick_till_wait = wait_time;
+  list_insert_ordered(&wait_list, &(curr->elem), thread_cmp_wait_times, NULL);
   schedule ();
 }
 
@@ -405,29 +409,51 @@ thread_get_priority (void)
 void
 thread_set_priority (int new_priority)
 {
-  int old_priority = thread_get_priority();
-  thread_current()->priority = new_priority;
-  thread_current()->donation = new_priority;
+  struct thread* curr = thread_current();
 
-  if (new_priority < old_priority)
-    thread_yield();
+  if (curr->saved_priority != -1) // There is no donation
+    curr->saved_priority = new_priority;
+  else {
+    int old_priority = thread_get_priority();
+    curr->priority = new_priority;
+    if (new_priority < old_priority) thread_yield();
+  }
 }
 
-void thread_donate_priority(struct thread *holder, int new_priority)
-{
-  holder->priority = new_priority;
-  if (holder != thread_current() && holder->priority > thread_current()->priority)
-    thread_yield();
+static bool
+lock_donor_cmp (const struct list_elem* a, const struct list_elem* b, UNUSED void* aux) {
+  struct lock* f = list_entry(a, struct lock, elem);
+  struct lock* s = list_entry(b, struct lock, elem);
+  return f->donor->priority > s->donor->priority;
 }
 
-void thread_undonate_priority(struct thread* holder, int new_priority)
+void thread_donate_priority(struct thread* t, struct lock* lock)
 {
-  holder->priority = new_priority;
-  if (!list_empty(&ready_list)) 
-  {
-    struct thread * t = list_entry(list_begin(&ready_list), struct thread, elem);
-    if (t->priority > holder->priority)
-      thread_yield();
+  struct thread* holder = lock->holder;
+
+  if (holder->saved_priority == -1)
+    holder->saved_priority = holder->priority;
+  holder->priority = t->priority;
+  if (lock->donor == NULL) {
+    lock->donor = t;
+    list_insert_ordered(&holder->locks, &lock->elem, lock_donor_cmp, NULL);
+  } else {
+    lock->donor = t;
+    // remove from list and add other
+    list_sort(&holder->locks, lock_donor_cmp, NULL);
+  }
+
+  list_sort(&ready_list, thread_cmp_priority, NULL);
+}
+
+void thread_undonate_priority()
+{
+  struct thread* curr = thread_current ();
+  if (list_empty(&curr->locks)) {
+    curr->priority = curr->saved_priority;
+    curr->saved_priority = -1;
+  } else {
+    curr->priority = list_entry(list_pop_front(&curr->locks), struct lock, elem)->donor->priority;
   }
 }
 
@@ -546,12 +572,12 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
-  t->donation = priority;
   t->magic = THREAD_MAGIC;
-  t->time = 0;
+
+  list_init(&t->locks);
+  t->saved_priority = -1;
 
   enum intr_level old_level = intr_disable ();  
-  list_init(&t->locks);
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
 }

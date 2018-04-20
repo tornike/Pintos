@@ -94,9 +94,11 @@ struct thread
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
-    struct list locks;
-    int64_t time;
-    int donation;
+
+    int64_t tick_till_wait;
+    struct list locks;                  /* Locks holded by this thread. */
+    int saved_priority;
+
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -139,8 +141,8 @@ void thread_foreach (thread_action_func *, void *);
 int thread_get_priority (void);
 void thread_set_priority (int);
 bool thread_cmp_priority (const struct list_elem *, const struct list_elem *, void *);
-void thread_donate_priority(struct thread *, int);
-void thread_undonate_priority(struct thread *, int);
+void thread_donate_priority(struct thread*, struct lock*);
+void thread_undonate_priority(void);
 
 int thread_get_nice (void);
 void thread_set_nice (int);

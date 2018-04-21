@@ -44,6 +44,9 @@ static struct lock tid_lock;
 /* Load average. */
 static fixed_point_t load_avg;
 
+/* Multi level queue. */
+struct list multi_level_queue[64];
+
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame
   {
@@ -78,6 +81,11 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+void
+update_priority(struct thread *t) {
+  t->priority = fix_round(fix_sub(fix_sub(fix_int(PRI_MAX), fix_div(t->recent_cpu, fix_int(4))), fix_mul(fix_int(t->nice), fix_int(2))));
+}
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -100,6 +108,12 @@ thread_init (void)
   list_init (&ready_list);
   list_init (&all_list);
   list_init (&wait_list);
+
+  if (thread_mlfqs) {
+    int i = 0;
+    for(; i < 64; i++)
+      list_init(&multi_level_queue[i]);
+  }
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -173,7 +187,7 @@ thread_tick (int64_t total_ticks)
     }
 
     if (total_ticks % 4 == 0) {
-      t->priority = fix_round(fix_sub(fix_sub(fix_int(PRI_MAX), fix_div(t->recent_cpu, fix_int(4))), fix_mul(fix_int(t->nice), fix_int(2))));
+      // update priority
     }
   }
   intr_set_level(old_level);
@@ -596,6 +610,7 @@ init_thread (struct thread *t, const char *name, int priority)
 
   if (thread_mlfqs) {
     struct thread *running = running_thread();
+
     /* Check if this thread should inherit niceness and recent_cpu from its parent. */
     if (is_thread(running) && running != initial_thread && running != idle_thread) {
       t->nice = running->nice;

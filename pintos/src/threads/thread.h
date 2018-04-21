@@ -95,14 +95,16 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
+    /* Timer */
     int64_t tick_till_wait;
-    int saved_priority;
+
     /* Donations */
+    int saved_priority;
     struct list locks;                  /* Locks on which this thread got donation */
     struct lock* block_lock;
 
     int nice;
-    fixed_point_t recent_cpu;   
+    fixed_point_t recent_cpu;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */

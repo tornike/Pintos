@@ -96,10 +96,13 @@ struct thread
     struct list_elem elem;              /* List element. */
 
     int64_t tick_till_wait;
-    struct list locks;                  /* Locks holded by this thread. */
     int saved_priority;
+    /* Donations */
+    struct list locks;                  /* Locks on which this thread got donation */
+    struct lock* block_lock;
+
     int nice;
-    fixed_point_t recent_cpu;
+    fixed_point_t recent_cpu;   
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */

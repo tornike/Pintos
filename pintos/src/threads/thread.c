@@ -350,16 +350,6 @@ thread_exit (void)
   process_exit ();
 #endif
 
-  // Free the locks.
-  //struct lock *lock;
-  //struct list_elem *elem = list_begin(&thread_current()->locks);
-  //while (elem != list_end(&thread_current()->locks))
-  //{
-  //  lock = list_entry(elem, struct lock, lock_elem);
-  //  lock_release(lock);
-  //  elem = list_remove(elem);
-  //}
-
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
@@ -602,6 +592,19 @@ init_thread (struct thread *t, const char *name, int priority)
 
   list_init(&t->locks);
   t->saved_priority = -1;
+  t->block_lock = NULL;
+
+  if (thread_mlfqs) {
+    struct thread *running = running_thread();
+    /* Check if this thread should inherit niceness and recent_cpu from its parent. */
+    if (is_thread(running) && running != initial_thread && running != idle_thread) {
+      t->nice = running->nice;
+      t->recent_cpu = running->recent_cpu;
+    } else {
+      t->nice = 0;
+      t->recent_cpu = fix_int(0);
+    }
+  }
 
   enum intr_level old_level = intr_disable ();  
   list_push_back (&all_list, &t->allelem);

@@ -44,9 +44,6 @@ static struct lock tid_lock;
 /* Load average. */
 static fixed_point_t load_avg;
 
-/* Multi level queue. */
-struct list multi_level_queue[64];
-
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame
   {
@@ -110,12 +107,6 @@ thread_init (void)
   list_init (&ready_list);
   list_init (&all_list);
   list_init (&wait_list);
-
-  if (thread_mlfqs) {
-    int i = 0;
-    for(; i < 64; i++)
-      list_init(&multi_level_queue[i]);
-  }
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -325,11 +316,7 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  if (thread_mlfqs) {
-    list_push_back(&multi_level_queue[t->priority], &t->elem);
-  } else {
-    list_insert_ordered(&ready_list, &t->elem, thread_cmp_priority, NULL);
-  }
+  list_insert_ordered(&ready_list, &t->elem, thread_cmp_priority, NULL);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -400,11 +387,7 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) {
-    if (thread_mlfqs) {
-      list_push_back(&multi_level_queue[cur->priority], &cur->elem);
-    } else {
-      list_insert_ordered (&ready_list, &(cur->elem), thread_cmp_priority, NULL);
-    }
+    list_insert_ordered (&ready_list, &(cur->elem), thread_cmp_priority, NULL);
   }
   cur->status = THREAD_READY;
   schedule ();
@@ -543,7 +526,7 @@ thread_get_recent_cpu (void)
   return fix_round(fix_scale(thread_current()->recent_cpu, 100));
 }
 
-void
+static void
 update_priority(struct thread *t, UNUSED void* AUX) 
 { 
   if (t == idle_thread) return;
@@ -553,34 +536,21 @@ update_priority(struct thread *t, UNUSED void* AUX)
   if (tmp_p < 0)
     tmp_p = 0;
   t->priority = tmp_p;
-  if (t->status == THREAD_READY && t != initial_thread) {
-    //list_remove(&t->elem);
-    //list_push_back(&multi_level_queue[t->priority], &t->elem);
-  }
 }
 
-void
+static void
 update_recent_cpu(struct thread *t, UNUSED void* AUX) 
 {
   fixed_point_t a = fix_div(fix_scale(load_avg, 2), fix_add(fix_scale(load_avg, 2), fix_int(1)));
   t->recent_cpu = fix_add(fix_mul(a, t->recent_cpu), fix_int(t->nice));
 }
 
-static size_t
-r_sum() {
-  size_t size = 0;
-  int i = 0;
-  for(; i < 64; i++)
-    size += list_size(&multi_level_queue[i]);
-  return size;
-}
-
-void
+static void
 update_load_avg()
 {
   fixed_point_t b = fix_div(fix_int(59), fix_int(60));
   fixed_point_t c = fix_div(fix_int(1), fix_int(60));
-  size_t ready_size = r_sum();
+  size_t ready_size = list_size(&ready_list);
   if (thread_current() != idle_thread) ready_size++;
   load_avg = fix_add(fix_mul(load_avg, b), fix_mul(fix_int(ready_size), c));
 }
@@ -701,19 +671,10 @@ alloc_frame (struct thread *t, size_t size)
 static struct thread *
 next_thread_to_run (void)
 {
-  if (thread_mlfqs) {
-    int i = 63;
-    for(; i >= 0; i--) {
-      if (!list_empty(&multi_level_queue[i]))
-        return list_entry (list_pop_front(&multi_level_queue[i]), struct thread, elem);
-    }
+  if (list_empty (&ready_list))
     return idle_thread;
-  } else {
-    if (list_empty (&ready_list))
-      return idle_thread;
-    else
-      return list_entry (list_pop_front (&ready_list), struct thread, elem);
-  }
+  else
+    return list_entry (list_pop_front (&ready_list), struct thread, elem);
 }
 
 /* Completes a thread switch by activating the new thread's page

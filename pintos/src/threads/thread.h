@@ -100,8 +100,8 @@ struct thread
 
     /* Donations */
     int saved_priority;
-    struct list locks;                  /* Locks on which this thread got donation */
-    struct lock* block_lock;
+    struct list locks;                  /* Locks this thread holds and got donation */
+    struct lock* block_lock;            /* Lock this thread is waiting */
 
     int nice;
     fixed_point_t recent_cpu;

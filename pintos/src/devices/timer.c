@@ -95,12 +95,6 @@ timer_should_update()
   return timer_ticks () % TIMER_FREQ == 0;
 }
 
-/* Checks if a second has passed since the last time. */
-bool
-timer_should_update_load_avg() {
-  return timer_ticks () % 100 == 0;
-}
-
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void

@@ -32,6 +32,7 @@ process_execute (const char *file_name)
 {
   char *fn_copy;
   tid_t tid;
+  struct process_data p_data;
 
   sema_init (&temporary, 0);
   /* Make a copy of FILE_NAME.
@@ -41,8 +42,14 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  int i;
+  char *token, *save_ptr;
+  for (token = strtok_r (file_name, " ", &save_ptr), i = 0; token != NULL; token = strtok_r (NULL, " ", &save_ptr), i++) 
+    p_data.args[i] = token;
+  p_data.file_name = p_data.args[0];
+  
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (p_data.args[0], PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
   return tid;
@@ -443,6 +450,7 @@ setup_stack (void **esp)
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
         *esp = PHYS_BASE;
+        // TODO: Setup stack correctly.
       else
         palloc_free_page (kpage);
     }

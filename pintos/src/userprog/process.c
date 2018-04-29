@@ -21,7 +21,7 @@
 
 static struct semaphore temporary;
 static thread_func start_process NO_RETURN;
-static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static bool load (void *argument_data, void (**eip) (void), void **esp);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -32,7 +32,7 @@ process_execute (const char *file_name)
 {
   char *fn_copy;
   tid_t tid;
-  struct process_data p_data;
+  struct process_argument_data argument_data;
 
   sema_init (&temporary, 0);
   /* Make a copy of FILE_NAME.
@@ -42,14 +42,12 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
-  int i;
-  char *token, *save_ptr;
-  for (token = strtok_r (file_name, " ", &save_ptr), i = 0; token != NULL; token = strtok_r (NULL, " ", &save_ptr), i++) 
-    p_data.args[i] = token;
-  p_data.file_name = p_data.args[0];
+  char *save_ptr;
+  argument_data.file_name = strtok_r (file_name, " ", &save_ptr);
+  argument_data.copy = fn_copy;
   
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (p_data.args[0], PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (argument_data.file_name, PRI_DEFAULT, start_process, &argument_data);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
   return tid;
@@ -58,9 +56,9 @@ process_execute (const char *file_name)
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *file_name_)
+start_process (void *argument_data_)
 {
-  char *file_name = file_name_;
+  struct process_argument_data* argument_data = argument_data_;
   struct intr_frame if_;
   bool success;
 
@@ -69,10 +67,10 @@ start_process (void *file_name_)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+  success = load (argument_data, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
-  palloc_free_page (file_name);
+  palloc_free_page (argument_data->copy);
   if (!success)
     thread_exit ();
 
@@ -207,7 +205,7 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-static bool setup_stack (void **esp);
+static bool setup_stack (void **esp, void *argument_data);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
@@ -218,11 +216,12 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
 bool
-load (const char *file_name, void (**eip) (void), void **esp)
+load (void *argument_data_, void (**eip) (void), void **esp)
 {
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
   struct file *file = NULL;
+  struct process_argument_data* argument_data = argument_data_;
   off_t file_ofs;
   bool success = false;
   int i;
@@ -234,10 +233,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-  file = filesys_open (file_name);
+  file = filesys_open (argument_data->file_name);
   if (file == NULL)
     {
-      printf ("load: %s: open failed\n", file_name);
+      printf ("load: %s: open failed\n", argument_data->file_name);
       goto done;
     }
 
@@ -250,7 +249,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
       || ehdr.e_phentsize != sizeof (struct Elf32_Phdr)
       || ehdr.e_phnum > 1024)
     {
-      printf ("load: %s: error loading executable\n", file_name);
+      printf ("load: %s: error loading executable\n", argument_data->file_name);
       goto done;
     }
 
@@ -314,7 +313,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp))
+  if (!setup_stack (esp, argument_data))
     goto done;
 
   /* Start address. */
@@ -439,18 +438,67 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool
-setup_stack (void **esp)
+setup_stack (void **esp, void *argument_data_)
 {
   uint8_t *kpage;
   bool success = false;
+  struct process_argument_data *argument_data = argument_data_;
 
+  int i = 0;
+  char *token, *save_ptr;
+  for (token = strtok_r (argument_data->copy, " ", &save_ptr), i = 0; token != NULL; token = strtok_r (NULL, " ", &save_ptr), i++) 
+    argument_data->argv[i] = token;
+  argument_data->argc = i;
+
+  void *arg_pointers[MAX_ARGUMENTS];
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success)
+      if (success) 
+      {
+        int i;        
         *esp = PHYS_BASE;
-        // TODO: Setup stack correctly.
+
+        /* Place the words at the top of the stack. Save their pointers for future referencing below. */
+        for (i = argument_data->argc - 1; i >= 0; i--) 
+        {
+          char *arg = argument_data->argv[i];
+          // printf("===> %s\n", arg);
+          size_t length = (strlen(arg) + 1) * sizeof(char);
+          *esp -= length;
+          strlcpy(*esp, arg, length);
+          arg_pointers[i] = *esp;
+        }
+
+        /* Word-align memory for faster access. */
+        // *esp -= (int)(*esp) % 4;
+        
+        /* Push the null pointer as the last element. */
+        *esp -= sizeof(void *);
+        memset(*esp, 0, sizeof(void *));
+        
+        /* Push the address of each string from right-to-left. */
+        for (i = argument_data->argc - 1; i >=0; i--) 
+        {
+          *esp -= sizeof(void *);
+          memcpy(*esp, &arg_pointers[i], sizeof(void *));
+        }
+
+        /* Push argv as a pointer above (argv[0]). */
+        *esp -= sizeof(void *);
+        memcpy(*esp, *esp + sizeof(void *), sizeof(void *));
+
+        /* Push argc. */
+        *esp -= sizeof(int);
+        memcpy(*esp, &argument_data->argc, sizeof(int));
+
+        /* Push return address. */
+        *esp -= sizeof(void *);
+        memset(*esp, 0, sizeof(void *));
+
+        hex_dump((uintptr_t)*esp, *esp, PHYS_BASE - *esp, true);
+      }
       else
         palloc_free_page (kpage);
     }

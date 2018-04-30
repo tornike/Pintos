@@ -472,7 +472,7 @@ setup_stack (void **esp, void *argument_data_)
         }
 
         /* Word-align memory for faster access. */
-        // *esp -= (int)(*esp) % 4;
+        *esp = (void *)ROUND_DOWN((uintptr_t)*esp, sizeof(void *));
         
         /* Push the null pointer as the last element. */
         *esp -= sizeof(void *);

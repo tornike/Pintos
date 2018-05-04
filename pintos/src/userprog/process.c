@@ -43,7 +43,7 @@ process_execute (const char *file_name)
   strlcpy (fn_copy, file_name, PGSIZE);
 
   char *save_ptr;
-  argument_data.file_name = strtok_r (file_name, " ", &save_ptr);
+  argument_data.file_name = strtok_r ((char*) file_name, " ", &save_ptr);
   argument_data.copy = fn_copy;
   
   /* Create a new thread to execute FILE_NAME. */

@@ -18,7 +18,7 @@ static void
 syscall_handler (struct intr_frame *f UNUSED)
 {
   uint32_t* args = ((uint32_t*) f->esp);
-  printf("System call number: %d\n", args[0]);
+  //printf("System call number: %d\n", args[0]);
   if (args[0] == SYS_EXIT) {
     f->eax = args[1];
     printf("%s: exit(%d)\n", &thread_current ()->name, args[1]);
@@ -31,7 +31,7 @@ syscall_handler (struct intr_frame *f UNUSED)
 
   } else if (args[0] == SYS_WRITE) {
     int fd = args[1];
-    const void* buffer = args[2];
+    const void* buffer = (const void*)args[2];
     unsigned size = args[3];
     if (fd == 1) {
       putbuf(buffer, size);
@@ -39,5 +39,5 @@ syscall_handler (struct intr_frame *f UNUSED)
     } else {
       f->eax = 0;
     }
-}
+  }
 }

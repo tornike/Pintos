@@ -465,51 +465,39 @@ setup_stack (void **esp, void *argument_data_)
         for (i = argument_data->argc - 1; i >= 0; i--) 
         {
           char *arg = argument_data->argv[i];
-          // printf("===> %s\n", arg);
           size_t length = (strlen(arg) + 1) * sizeof(char);
           *esp -= length;
           strlcpy(*esp, arg, length);
           arg_pointers[i] = *esp;
-          printf("%p: argv[%d] %s %d\n", *esp, i, arg, length);
         }
 
         /* Word-align memory for faster access. */
-        // *esp = (void *)ROUND_DOWN((uintptr_t)*esp, sizeof(void *));
         size_t align = ((uintptr_t)(*esp) % 4);
         *esp -= align;
         memset(*esp, 0, align);
-        printf("%p: word-align 0 %d\n", *esp, align);      
         
         /* Push the null pointer as the last element. */
         *esp -= sizeof(char *);
-        memset(*esp, 0, sizeof(char *));
-        printf("%p: argv[%d] 0 %d\n", *esp, argument_data->argc, sizeof(char *));              
-        
+        *(char **)*esp = NULL;
+
         /* Push the address of each string from right-to-left. */
-        for (i = argument_data->argc - 1; i >=0; i--) 
+        for (i = argument_data->argc - 1; i >= 0; i--) 
         {
           *esp -= sizeof(char *);
-          memcpy(*esp, &arg_pointers[i], sizeof(char *));
-          printf("%p: argv[%d] %p %d\n", *esp, i, arg_pointers[i], sizeof(char *));
+          *(char **)*esp = arg_pointers[i];
         }
 
         /* Push argv as a pointer above (argv[0]). */
-        *esp -= sizeof(char **);
-        memcpy(*esp, *esp + sizeof(char **), sizeof(char **));
-        printf("%p: argv %p %d\n", *esp, *esp +sizeof(char **), sizeof(char **));
+        *esp -= sizeof(char ***);
+        *(char ***)*esp = *esp + sizeof(char **);
 
         /* Push argc. */
         *esp -= sizeof(int);
-        memcpy(*esp, &argument_data->argc, sizeof(int));
-        // *(int*)*esp = argument_data->argc;        
-        printf("%p: argc %d %d\n", *esp, argument_data->argc, sizeof(int));
+        *(int *)*esp = argument_data->argc;     
 
         /* Push return address. */
         *esp -= sizeof(void *);
-        memset(*esp, 0, sizeof(void *));
-        printf("%p: return address\n", *esp);
-
-        hex_dump((uintptr_t)*esp, *esp, PHYS_BASE - *esp, true);
+        *(void **)*esp = NULL;
       }
       else
         palloc_free_page (kpage);

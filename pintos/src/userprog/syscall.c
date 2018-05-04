@@ -30,6 +30,14 @@ syscall_handler (struct intr_frame *f UNUSED)
   } else if (args[0] == SYS_EXEC) {
 
   } else if (args[0] == SYS_WRITE) {
-
+    int fd = args[1];
+    const void* buffer = args[2];
+    unsigned size = args[3];
+    if (fd == 1) {
+      putbuf(buffer, size);
+      f->eax = size;
+    } else {
+      f->eax = 0;
+    }
   }
 }

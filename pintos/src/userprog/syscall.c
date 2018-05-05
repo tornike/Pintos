@@ -22,7 +22,8 @@ static int open(const char*);
 static void close(int);
 static int read (int, void*, unsigned);
 static int write (int, const void*, unsigned);
-static bool create (const char*, unsigned);
+static int create (const char*, unsigned);
+static int filesize (int);
 
 static bool 
 is_valid_ptr(const void *ptr)
@@ -78,16 +79,33 @@ syscall_handler (struct intr_frame *f UNUSED)
     sema_down(&filesys_lock);
     const char* file_name = (const char*)args[1];
     unsigned initial_size = args[2];
-    f->eax = (uint32_t)create(file_name, initial_size);
+    int res = create(file_name, initial_size);
+    if (res == -1) {
+      f->eax = -1;
+      printf("%s: exit(%d)\n", &thread_current ()->name, -1);
+      thread_exit();
+    }
+    f->eax = (uint32_t)res;
+    sema_up(&filesys_lock);
+  } else if (args[0] == SYS_FILESIZE) {
+    sema_down(&filesys_lock);
+    int fd = args[1];
+    f->eax = filesize(fd);
     sema_up(&filesys_lock);
   }
 }
 
 
+static int filesize (int fd) {
+  if (fd < 0 || fd >= MAX_FILE_COUNT) return -1;
 
+  struct file* file = thread_current()->file_descriptors[fd];
+  if (file == NULL) return -1;
+  return (int)file_length(file);
+}
 
-static bool create (const char *file, unsigned initial_size) {
-  if (file == NULL) return false;
+static int create (const char *file, unsigned initial_size) {
+  if (file == NULL) return -1;
   return filesys_create(file, initial_size);
 }
 
@@ -136,8 +154,15 @@ static int write (int fd, const void *buffer, unsigned size) {
   if (fd < 0 || fd >= MAX_FILE_COUNT) return -1;
 
   if (fd == STDOUT_FILENO) {
-    putbuf(buffer, size);
-    return  size;
+    const char* ptr = buffer;
+    unsigned size_copy = size;
+    while (size >= 128) {
+      putbuf(ptr, 128);
+      size -= 128;
+      ptr += 128;
+    }
+    putbuf(ptr, size);
+    return size_copy;
   } else {
     struct file* file = thread_current()->file_descriptors[fd];
     if (file == NULL) return -1;

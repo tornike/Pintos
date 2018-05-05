@@ -9,7 +9,6 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
-#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -20,6 +19,8 @@
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+
+#include "userprog/syscall.h"
 
 static struct semaphore temporary;
 static thread_func start_process NO_RETURN;
@@ -235,8 +236,9 @@ load (void *argument_data_, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-  lock_acquire(&filesys_lock);
+  sema_down(&filesys_lock);
   file = filesys_open (argument_data->file_name);
+  file_deny_write(file);
   if (file == NULL)
     {
       printf ("load: %s: open failed\n", argument_data->file_name);
@@ -327,7 +329,7 @@ load (void *argument_data_, void (**eip) (void), void **esp)
  done:
   /* We arrive here whether the load is successful or not. */
   file_close (file);
-  lock_release(&filesys_lock);  
+  sema_up(&filesys_lock); 
   return success;
 }
 

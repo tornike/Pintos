@@ -5,14 +5,36 @@
 #include "threads/thread.h"
 #include "devices/shutdown.h"
 
+#include "filesys/filesys.h"
+#include "filesys/file.h"
+#include "threads/vaddr.h"
+#include "devices/input.h"
+
+struct fd_info {
+  struct file* file;
+  int ref_count; /* Reference Count. */
+};
+
 
 static void syscall_handler (struct intr_frame *);
+
+static int open(const char*);
+static void close(int);
+static int read (int, void*, unsigned);
+static int write (int, const void*, unsigned);
+static bool create (const char*, unsigned);
+
+static bool 
+is_valid_ptr(const void *ptr)
+{
+  return is_user_vaddr(ptr) && (pagedir_get_page(thread_current()->pagedir, ptr) != NULL);
+}
 
 void
 syscall_init (void)
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
-  lock_init(&filesys_lock);
+  sema_init(&filesys_lock, 1);
 }
 
 static void
@@ -31,14 +53,94 @@ syscall_handler (struct intr_frame *f UNUSED)
   } else if (args[0] == SYS_EXEC) {
 
   } else if (args[0] == SYS_WRITE) {
+    sema_down(&filesys_lock);
     int fd = args[1];
     const void* buffer = (const void*)args[2];
     unsigned size = args[3];
-    if (fd == 1) {
-      putbuf(buffer, size);
-      f->eax = size;
-    } else {
-      f->eax = 0;
+    f->eax = write(fd, buffer, size);
+    sema_up(&filesys_lock);
+  } else if (args[0] == SYS_OPEN) {
+    sema_down(&filesys_lock);
+    f->eax = open((const char *)args[1]);
+    sema_up(&filesys_lock);
+  } else if (args[0] == SYS_CLOSE) {
+    sema_down(&filesys_lock);
+    close(args[1]);
+    sema_up(&filesys_lock);
+  } else if (args[0] == SYS_READ) {
+    sema_down(&filesys_lock);
+    int fd = args[1];
+    void* buffer = (void*)args[2];
+    unsigned size = args[3];
+    f->eax = read(fd, buffer, size);
+    sema_up(&filesys_lock);
+  } else if (args[0] == SYS_CREATE) {
+    sema_down(&filesys_lock);
+    const char* file_name = (const char*)args[1];
+    unsigned initial_size = args[2];
+    f->eax = (uint32_t)create(file_name, initial_size);
+    sema_up(&filesys_lock);
+  }
+}
+
+
+
+
+static bool create (const char *file, unsigned initial_size) {
+  if (file == NULL) return false;
+  return filesys_create(file, initial_size);
+}
+
+static int open(const char *file_name) {
+  if (file_name == NULL || !is_valid_ptr(file_name)) return -1;
+  struct file* file = filesys_open(file_name);
+  if (file == NULL) return -1;
+  struct thread* curr = thread_current();
+  int fd = curr->next_free_fd;
+  curr->file_descriptors[fd] = file;
+  while(curr->next_free_fd != MAX_FILE_COUNT - 1) {
+    curr->next_free_fd++;
+    if (curr->file_descriptors[curr->next_free_fd] == NULL) break;
+  }
+  return fd;
+}
+
+static void close(int fd) {
+  if (fd < 0 || fd >= MAX_FILE_COUNT) return;
+  struct thread* curr = thread_current();
+  struct file* file = curr->file_descriptors[fd];
+  if (file == NULL) return;
+
+  file_close(file);
+  curr->file_descriptors[fd] = NULL;
+  curr->next_free_fd = fd;
+}
+
+static int read (int fd, void* buffer, unsigned size) {
+  if (fd < 0 || fd >= MAX_FILE_COUNT) return -1;
+
+  if (fd == STDIN_FILENO) {
+    unsigned i;
+    for(i = 0; i < size; i++) {
+      ((unsigned char*)buffer)[i] = input_getc();
     }
+    return size;
+  } else {
+    struct file* file = thread_current()->file_descriptors[fd];
+    if (file == NULL) return -1;
+    return file_read(file, buffer, size);
+  }
+}
+
+static int write (int fd, const void *buffer, unsigned size) {
+  if (fd < 0 || fd >= MAX_FILE_COUNT) return -1;
+
+  if (fd == STDOUT_FILENO) {
+    putbuf(buffer, size);
+    return  size;
+  } else {
+    struct file* file = thread_current()->file_descriptors[fd];
+    if (file == NULL) return -1;
+    return file_write(file, buffer, size);
   }
 }

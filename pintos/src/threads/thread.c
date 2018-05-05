@@ -645,6 +645,13 @@ init_thread (struct thread *t, const char *name, int priority)
   t->saved_priority = -1;
   t->block_lock = NULL;
 
+#ifdef USERPROG
+  int i;
+  for(i = 0; i < MAX_FILE_COUNT; i++)
+    t->file_descriptors[i] = NULL;
+  t->next_free_fd = 2;
+#endif
+
   enum intr_level old_level = intr_disable ();  
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);

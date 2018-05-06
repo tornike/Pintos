@@ -3,6 +3,6 @@
 
 void syscall_init (void);
 
-struct semaphore filesys_lock;
+struct lock filesys_lock;
 
 #endif /* userprog/syscall.h */

@@ -236,7 +236,7 @@ load (void *argument_data_, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-  sema_down(&filesys_lock);
+  lock_acquire(&filesys_lock);
   file = filesys_open (argument_data->file_name);
   file_deny_write(file);
   if (file == NULL)
@@ -329,7 +329,7 @@ load (void *argument_data_, void (**eip) (void), void **esp)
  done:
   /* We arrive here whether the load is successful or not. */
   file_close (file);
-  sema_up(&filesys_lock); 
+  lock_release(&filesys_lock); 
   return success;
 }
 

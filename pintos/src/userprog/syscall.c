@@ -36,9 +36,7 @@ is_mapped_ptr (void *ptr)
 static bool 
 is_valid_ptr (void *ptr, size_t size) 
 {
-	size_t i;
-	for (i = 0; i < size; i++)
-		if (!is_mapped_ptr(((char *)ptr + i))) return false;
+	if (!is_mapped_ptr(((char *)ptr + size))) return false;
 	return true;
 }
 
@@ -49,7 +47,8 @@ is_valid_string (void *ptr)
   for (i = 0;; i++)
   {
     if (!is_mapped_ptr(ptr)) return false;
-    if (*((char*)ptr + i) == '\0') return true;
+    ptr++;
+    if (*((char*)ptr) == '\0') return true;
   }
 
   return false;
@@ -59,7 +58,7 @@ void
 syscall_init (void)
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
-  sema_init(&filesys_lock, 1);
+  lock_init(&filesys_lock);
 }
 
 static void
@@ -68,58 +67,69 @@ syscall_handler (struct intr_frame *f UNUSED)
   uint32_t* args = ((uint32_t*) f->esp);
   //printf("System call number: %d\n", args[0]);
 
+  if (!is_valid_ptr(f->esp, sizeof(uint32_t))) exit(-1);
+  
   if (args[0] == SYS_WRITE) {
-    sema_down(&filesys_lock);
+    lock_acquire(&filesys_lock);
     int fd = args[1];
     const void* buffer = (const void*)args[2];
     unsigned size = args[3];
+    if (!is_valid_ptr(f->esp, sizeof(int) + sizeof(void *) + sizeof(unsigned))) exit(-1);
     f->eax = write(fd, buffer, size);
-    sema_up(&filesys_lock);
+    lock_release(&filesys_lock);
   } else if (args[0] == SYS_READ) {
-    sema_down(&filesys_lock);
+    lock_acquire(&filesys_lock);
     int fd = args[1];
     void* buffer = (void*)args[2];
     unsigned size = args[3];
+    if (!is_valid_ptr(f->esp, sizeof(int) + sizeof(void *) + sizeof(unsigned))) exit(-1);    
     f->eax = read(fd, buffer, size);
-    sema_up(&filesys_lock);
+    lock_release(&filesys_lock);
   } else if (args[0] == SYS_FILESIZE) {
-    sema_down(&filesys_lock);
+    lock_acquire(&filesys_lock);
     int fd = args[1];
+    if (!is_valid_ptr(f->esp, sizeof(int))) exit(-1);    
     f->eax = filesize(fd);
-    sema_up(&filesys_lock);
+    lock_release(&filesys_lock);
   } else if (args[0] == SYS_SEEK) {
-    sema_down(&filesys_lock);
+    lock_acquire(&filesys_lock);
     int fd = args[1];
     unsigned position = args[2];
+    if (!is_valid_ptr(f->esp, sizeof(int) + sizeof(unsigned))) exit(-1);    
     seek(fd, position);
-    sema_up(&filesys_lock);
+    lock_release(&filesys_lock);
   } else if (args[0] == SYS_TELL) {
-    sema_down(&filesys_lock);
+    lock_acquire(&filesys_lock);
     int fd = args[1];
+    if (!is_valid_ptr(f->esp, sizeof(int))) exit(-1);    
     f->eax = tell(fd);
-    sema_up(&filesys_lock);
+    lock_release(&filesys_lock);
   } else if (args[0] == SYS_EXEC) {
 
   } else if (args[0] == SYS_WAIT) {
 
   } else if (args[0] == SYS_OPEN) {
-    sema_down(&filesys_lock);
+    lock_acquire(&filesys_lock);
+    if (!is_valid_ptr(f->esp, sizeof(char *))) exit(-1);    
     f->eax = open((const char *)args[1]);
-    sema_up(&filesys_lock);
+    lock_release(&filesys_lock);
   } else if (args[0] == SYS_CLOSE) {
-    sema_down(&filesys_lock);
+    lock_acquire(&filesys_lock);
+    if (!is_valid_ptr(f->esp, sizeof(int))) exit(-1);    
     close(args[1]);
-    sema_up(&filesys_lock);
+    lock_release(&filesys_lock);
   } else if (args[0] == SYS_CREATE) {
-    sema_down(&filesys_lock);
+    lock_acquire(&filesys_lock);
     const char* file_name = (const char*)args[1];
     unsigned initial_size = args[2];
+    if (!is_valid_ptr(f->esp, sizeof(int) + sizeof(unsigned))) exit(-1);    
     f->eax = (uint32_t)create(file_name, initial_size);
-    sema_up(&filesys_lock);
+    lock_release(&filesys_lock);
   } else if (args[0] == SYS_REMOVE) {
 
   } else if (args[0] == SYS_EXIT) {
     int status = args[1];
+    if (!is_valid_ptr(f->esp, sizeof(int))) exit(-1);    
     exit(status);
   } else if (args[0] == SYS_HALT) {
     shutdown_power_off();
@@ -131,7 +141,11 @@ syscall_handler (struct intr_frame *f UNUSED)
 static int 
 write (int fd, const void *buffer, unsigned size) 
 {
-  if (!is_valid_ptr(buffer, size) || fd < 0 || fd >= MAX_FILE_COUNT) exit(-1);
+  if (!is_valid_ptr(buffer, size) || fd < 0 || fd >= MAX_FILE_COUNT) 
+  {
+    lock_release(&filesys_lock);
+    exit(-1);
+  }
 
   if (fd == STDOUT_FILENO) {
     const char* ptr = buffer;
@@ -145,7 +159,11 @@ write (int fd, const void *buffer, unsigned size)
     return size_copy;
   } else {
     struct file* file = thread_current()->file_descriptors[fd];
-    if (file == NULL) exit(-1);
+    if (file == NULL) 
+    {
+      lock_release(&filesys_lock);
+      exit(-1);
+    }
     return file_write(file, buffer, size);
   }
 }
@@ -153,7 +171,12 @@ write (int fd, const void *buffer, unsigned size)
 static int 
 read (int fd, void* buffer, unsigned size) 
 {
-  if (!is_valid_ptr(buffer, size) || fd < 0 || fd >= MAX_FILE_COUNT) exit(-1);  
+  if (!is_valid_ptr(buffer, size))
+  {
+    lock_release(&filesys_lock);
+    exit(-1);
+  }
+  if (fd < 0 || fd >= MAX_FILE_COUNT) return -1;
 
   if (fd == STDIN_FILENO) {
     unsigned i;
@@ -162,7 +185,7 @@ read (int fd, void* buffer, unsigned size)
     return size;
   } else {
     struct file* file = thread_current()->file_descriptors[fd];
-    if (file == NULL) exit(-1);
+    if (file == NULL) return -1;
     return file_read(file, buffer, size);
   }
 }
@@ -170,37 +193,65 @@ read (int fd, void* buffer, unsigned size)
 static void
 seek (int fd, unsigned position) 
 {
-  if (fd < 0 || fd >= MAX_FILE_COUNT) exit(-1);
+  if (fd < 0 || fd >= MAX_FILE_COUNT)
+  {
+    lock_release(&filesys_lock);
+    exit(-1);
+  }
 
   struct file* file = thread_current()->file_descriptors[fd];
-  if (file == NULL) exit(-1);
+  if (file == NULL)
+  {
+    lock_release(&filesys_lock);
+    exit(-1);
+  }
   file_seek(file, position);
 }
 
 static unsigned 
 tell (int fd) 
 {
-  if (fd < 0 || fd >= MAX_FILE_COUNT) exit(-1);
+  if (fd < 0 || fd >= MAX_FILE_COUNT) 
+  {
+    lock_release(&filesys_lock);
+    exit(-1);
+  }
 
   struct file* file = thread_current()->file_descriptors[fd];
-  if (file == NULL) exit(-1);
+  if (file == NULL)
+  {
+    lock_release(&filesys_lock);
+    exit(-1);
+  }
   return file_tell(file);
 }
 
 static int 
 filesize (int fd) 
 {
-  if (fd < 0 || fd >= MAX_FILE_COUNT) exit(-1);
+  if (fd < 0 || fd >= MAX_FILE_COUNT)
+  {
+    lock_release(&filesys_lock);
+    exit(-1);
+  }
 
   struct file* file = thread_current()->file_descriptors[fd];
-  if (file == NULL) exit(-1);
+  if (file == NULL) 
+  {
+    lock_release(&filesys_lock);
+    exit(-1);
+  }
   return file_length(file);
 }
 
 static int 
 open (const char *file_name) 
 {
-  if (!is_valid_string(file_name)) exit(-1);
+  if (!is_valid_string(file_name))
+  {
+    lock_release(&filesys_lock);
+    exit(-1);
+  }
 
   struct file* file = filesys_open(file_name);
   if (file == NULL) return -1;
@@ -231,7 +282,11 @@ close (int fd)
 static bool 
 create (const char *file, unsigned initial_size) 
 {
-  if (!is_valid_string(file)) exit(-1);
+  if (!is_valid_string(file))
+  {
+    lock_release(&filesys_lock);
+    exit(-1);
+  }
   return filesys_create(file, initial_size);
 }
 
@@ -242,7 +297,7 @@ remove (const char *file)
 }
 
 static void 
-exit(int status) 
+exit (int status)
 {
   printf("%s: exit(%d)\n", (char*)&thread_current ()->name, status);
   thread_exit();

@@ -455,13 +455,6 @@ thread_set_priority (int new_priority)
   }
 }
 
-static bool
-lock_donor_cmp (const struct list_elem* a, const struct list_elem* b, UNUSED void* aux) {
-  struct lock* f = list_entry(a, struct lock, elem);
-  struct lock* s = list_entry(b, struct lock, elem);
-  return f->holders_donor->priority > s->holders_donor->priority;
-}
-
 void thread_donate_priority(struct thread* t, struct lock* lock)
 {
   struct thread* holder = lock->holder;
@@ -473,7 +466,6 @@ void thread_donate_priority(struct thread* t, struct lock* lock)
   if (lock->holders_donor != NULL)
     list_remove(&lock->elem);
   lock->holders_donor = t;
-  list_insert_ordered(&holder->locks, &lock->elem, lock_donor_cmp, NULL);
 
   list_remove(&holder->elem);
   list_insert_ordered(&ready_list, &holder->elem, thread_cmp_priority, NULL);
@@ -485,11 +477,12 @@ void thread_donate_priority(struct thread* t, struct lock* lock)
 void thread_undonate_priority()
 {
   struct thread* curr = thread_current ();
-  if (list_empty(&curr->locks)) {
+  struct thread* next_donor;
+  if (!list_empty(&curr->locks) && (next_donor = list_entry(list_pop_front(&curr->locks), struct lock, elem)->holders_donor) != NULL) {
+    curr->priority = next_donor->priority;
+  } else {
     curr->priority = curr->saved_priority;
     curr->saved_priority = -1;
-  } else {
-    curr->priority = list_entry(list_pop_front(&curr->locks), struct lock, elem)->holders_donor->priority;
   }
 }
 
@@ -531,8 +524,8 @@ update_priority(struct thread *t, UNUSED void* AUX)
 { 
   if (t == idle_thread) return;
   int tmp_p = fix_round(fix_sub(fix_sub(fix_int(PRI_MAX), fix_div(t->recent_cpu, fix_int(4))), fix_scale(fix_int(t->nice), 2)));
-  if (tmp_p > 63)
-    tmp_p = 63;
+  if (tmp_p > PRI_MAX)
+    tmp_p = PRI_MAX;
   if (tmp_p < 0)
     tmp_p = 0;
   t->priority = tmp_p;

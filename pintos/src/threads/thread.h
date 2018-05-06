@@ -102,7 +102,7 @@ struct thread
 
     /* Donations */
     int saved_priority;
-    struct list locks;                  /* Locks this thread holds and got donation */
+    struct list locks;                  /* Locks this thread holds */
     struct lock* block_lock;            /* Lock this thread is waiting on */
 
     int nice;

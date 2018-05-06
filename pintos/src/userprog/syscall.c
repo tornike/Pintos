@@ -10,12 +10,8 @@
 #include "threads/vaddr.h"
 #include "devices/input.h"
 
-struct fd_info {
-  struct file* file;
-  int ref_count; /* Reference Count. */
-};
 
-
+#define PIECE_SIZE 128
 static void syscall_handler (struct intr_frame *);
 
 static int write (int, const void*, unsigned);
@@ -23,8 +19,6 @@ static int read (int, void*, unsigned);
 static int filesize (int);
 static void seek (int, unsigned);
 static unsigned tell (int);
-
-
 
 static int open(const char*);
 static void close(int);
@@ -34,9 +28,31 @@ static bool remove (const char*);
 static void exit(int);
 
 static bool 
-is_valid_ptr(const void *ptr)
+is_mapped_ptr (void *ptr)
 {
-  return is_user_vaddr(ptr) && (pagedir_get_page(thread_current()->pagedir, ptr) != NULL);
+  return ptr != NULL && is_user_vaddr(ptr) && (pagedir_get_page(thread_current()->pagedir, ptr) != NULL);
+}
+
+static bool 
+is_valid_ptr (void *ptr, size_t size) 
+{
+	size_t i;
+	for (i = 0; i < size; i++)
+		if (!is_mapped_ptr(((char *)ptr + i))) return false;
+	return true;
+}
+
+static bool
+is_valid_string (void *ptr) 
+{
+  size_t i;
+  for (i = 0;; i++)
+  {
+    if (!is_mapped_ptr(ptr)) return false;
+    if (*((char*)ptr + i) == '\0') return true;
+  }
+
+  return false;
 }
 
 void
@@ -112,17 +128,18 @@ syscall_handler (struct intr_frame *f UNUSED)
   }
 }
 
-
-static int write (int fd, const void *buffer, unsigned size) {
-  if (fd < 0 || fd >= MAX_FILE_COUNT) exit(-1);
+static int 
+write (int fd, const void *buffer, unsigned size) 
+{
+  if (!is_valid_ptr(buffer, size) || fd < 0 || fd >= MAX_FILE_COUNT) exit(-1);
 
   if (fd == STDOUT_FILENO) {
     const char* ptr = buffer;
     unsigned size_copy = size;
-    while (size >= 128) {
-      putbuf(ptr, 128);
-      size -= 128;
-      ptr += 128;
+    while (size >= PIECE_SIZE) {
+      putbuf(ptr, PIECE_SIZE);
+      size -= PIECE_SIZE;
+      ptr += PIECE_SIZE;
     }
     putbuf(ptr, size);
     return size_copy;
@@ -133,9 +150,10 @@ static int write (int fd, const void *buffer, unsigned size) {
   }
 }
 
-
-static int read (int fd, void* buffer, unsigned size) {
-  if (fd < 0 || fd >= MAX_FILE_COUNT) exit(-1);
+static int 
+read (int fd, void* buffer, unsigned size) 
+{
+  if (!is_valid_ptr(buffer, size) || fd < 0 || fd >= MAX_FILE_COUNT) exit(-1);  
 
   if (fd == STDIN_FILENO) {
     unsigned i;
@@ -149,7 +167,9 @@ static int read (int fd, void* buffer, unsigned size) {
   }
 }
 
-static void seek (int fd, unsigned position) {
+static void
+seek (int fd, unsigned position) 
+{
   if (fd < 0 || fd >= MAX_FILE_COUNT) exit(-1);
 
   struct file* file = thread_current()->file_descriptors[fd];
@@ -157,7 +177,9 @@ static void seek (int fd, unsigned position) {
   file_seek(file, position);
 }
 
-static unsigned tell (int fd) {
+static unsigned 
+tell (int fd) 
+{
   if (fd < 0 || fd >= MAX_FILE_COUNT) exit(-1);
 
   struct file* file = thread_current()->file_descriptors[fd];
@@ -165,8 +187,9 @@ static unsigned tell (int fd) {
   return file_tell(file);
 }
 
-
-static int filesize (int fd) {
+static int 
+filesize (int fd) 
+{
   if (fd < 0 || fd >= MAX_FILE_COUNT) exit(-1);
 
   struct file* file = thread_current()->file_descriptors[fd];
@@ -174,9 +197,11 @@ static int filesize (int fd) {
   return file_length(file);
 }
 
+static int 
+open (const char *file_name) 
+{
+  if (!is_valid_string(file_name)) exit(-1);
 
-static int open(const char *file_name) {
-  if (file_name == NULL || !is_valid_ptr(file_name)) return -1;
   struct file* file = filesys_open(file_name);
   if (file == NULL) return -1;
   struct thread* curr = thread_current();
@@ -189,8 +214,11 @@ static int open(const char *file_name) {
   return fd;
 }
 
-static void close(int fd) {
+static void 
+close (int fd) 
+{
   if (fd < 0 || fd >= MAX_FILE_COUNT) return;
+
   struct thread* curr = thread_current();
   struct file* file = curr->file_descriptors[fd];
   if (file == NULL) return;
@@ -200,19 +228,22 @@ static void close(int fd) {
   curr->next_free_fd = fd;
 }
 
-
-static bool create (const char *file, unsigned initial_size) {
-  if (file == NULL) exit(-1);
+static bool 
+create (const char *file, unsigned initial_size) 
+{
+  if (!is_valid_string(file)) exit(-1);
   return filesys_create(file, initial_size);
 }
 
-
-static bool remove (const char *file) {
+static bool 
+remove (const char *file) 
+{
 
 }
 
-
-static void exit(int status) {
+static void 
+exit(int status) 
+{
   printf("%s: exit(%d)\n", (char*)&thread_current ()->name, status);
   thread_exit();
 }

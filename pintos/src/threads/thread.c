@@ -178,7 +178,6 @@ thread_tick (int64_t total_ticks)
       thread_unblock(t);
     } else break;
   }
-
   intr_set_level(old_level);
 
   /* Enforce preemption. */
@@ -365,12 +364,27 @@ thread_exit (void)
   process_exit ();
 #endif
 
+  struct thread* curr = thread_current();
+
+  /* Release all locks. */
+  enum intr_level old_level;
+  old_level = intr_disable();
+
+  struct list_elem *e = list_begin(&curr->locks);
+  while (e != list_end(&curr->locks)) {
+    struct lock* l = list_entry (e, struct lock, elem);
+    lock_release(l);
+    e = list_remove(e);
+  }
+
+  intr_set_level(old_level);
+
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable ();
-  list_remove (&thread_current()->allelem);
-  thread_current ()->status = THREAD_DYING;
+  list_remove (&curr->allelem);
+  curr->status = THREAD_DYING;
   schedule ();
   NOT_REACHED ();
 }

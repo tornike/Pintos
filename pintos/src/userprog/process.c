@@ -110,6 +110,19 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
+  /* Close all files. */
+  enum intr_level old_level;
+  old_level = intr_disable(); // While file_close is not thread safe.
+  
+  int fd;
+  for (fd = 2; fd < MAX_FILE_COUNT; fd++) {
+    struct file* f = cur->file_descriptors[fd];
+    if (f != NULL)
+      file_close(f);
+  }
+
+  intr_set_level(old_level);
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;

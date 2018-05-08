@@ -126,10 +126,11 @@ process_wait (tid_t child_tid)
 
   if (child == NULL) return -1;
 
-  sema_up(&child->wait_for_parent);
   sema_down(&child->status_ready);
+  int child_status = child->exit_status;
+  sema_up(&child->wait_for_parent);
   
-  return child->exit_status;
+  return child_status;
 }
 
 /* Free the current process's resources. */

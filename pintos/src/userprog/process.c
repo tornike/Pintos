@@ -155,7 +155,7 @@ process_exit (void)
 
   /* 
    * Tell children thar their statuses are not needed any more,
-   * So they could be deallocated.
+   * so they could be deallocated.
    */
   struct list_elem *e = list_begin(&cur->children);
   while (e != list_end(&cur->children)) {

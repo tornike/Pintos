@@ -25,7 +25,7 @@ static int open(const char*);
 static void close(int);
 static bool create (const char*, unsigned);
 static bool remove (const char*);
-
+static void wait (struct intr_frame *f);
 static void exit(int);
 
 
@@ -98,11 +98,9 @@ syscall_handler (struct intr_frame *f UNUSED)
     f->eax = tell(fd);
     lock_release(&filesys_lock);
   } else if (args[0] == SYS_EXEC) {
-    //lock_acquire(&filesys_lock);
     exec(f);
-    //lock_release(&filesys_lock);
   } else if (args[0] == SYS_WAIT) {
-    f->eax = process_wait(args[1]);
+    wait(f);
   } else if (args[0] == SYS_OPEN) {
     lock_acquire(&filesys_lock);
     if (!is_valid_ptr(f->esp, sizeof(char *))) exit(-1);
@@ -142,9 +140,19 @@ static void
 exec (struct intr_frame *f) {
   uint32_t* args = ((uint32_t*) f->esp);
   if (!is_valid_ptr(args, sizeof(uint32_t) + sizeof(char*))) exit(-1);
-  if (!is_valid_string(args[1])) exit(-1);
-  
-  f->eax = process_execute(args[1]);
+
+  const char* file = args[1];
+  if (!is_valid_string(file)) exit(-1);
+  f->eax = process_execute(file);
+}
+
+static void
+wait (struct intr_frame *f) {
+  uint32_t* args = ((uint32_t*) f->esp);
+  if (!is_valid_ptr(args, sizeof(uint32_t) + sizeof(int))) exit(-1);
+
+  int child_pid = args[1];
+  f->eax = process_wait(child_pid);
 }
 
 static int 

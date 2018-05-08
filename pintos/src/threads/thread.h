@@ -111,6 +111,7 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+
     struct file* file_descriptors[MAX_FILE_COUNT];
     int next_free_fd;
 
@@ -119,8 +120,8 @@ struct thread
     struct list_elem child_elem;
     struct list children;
     int exit_status;
-    struct semaphore wait_for_parent;
-    struct semaphore status_ready;
+    struct semaphore wait_for_parent;   /* Used to wait for parent to take status */
+    struct semaphore status_ready;      /* Signal parent to take status */
 #endif
 
     /* Owned by thread.c. */

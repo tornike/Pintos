@@ -22,7 +22,6 @@
 
 #include "userprog/syscall.h"
 
-static struct semaphore temporary;
 static thread_func start_process NO_RETURN;
 static bool load (void *argument_data, void (**eip) (void), void **esp);
 
@@ -41,8 +40,8 @@ process_execute (const char *file_name)
   if (argument_data == NULL)
     return TID_ERROR;
   
-  strlcpy (&argument_data->cmd_line, file_name, strlen(file_name) + 1);
-  strlcpy (&argument_data->file_name, file_name, strlen(file_name) + 1);
+  strlcpy (argument_data->cmd_line, file_name, strlen(file_name) + 1);
+  strlcpy (argument_data->file_name, file_name, strlen(file_name) + 1);
 
   char *save_ptr;
   strtok_r ((char*) argument_data->file_name, " ", &save_ptr);
@@ -126,9 +125,9 @@ process_wait (tid_t child_tid)
 
   if (child == NULL) return -1;
 
-  sema_down(&child->status_ready);
+  sema_down(&child->status_ready);        /* Wait for status */
   int child_status = child->exit_status;
-  sema_up(&child->wait_for_parent);
+  sema_up(&child->wait_for_parent);       /* Allow child to die */
   
   return child_status;
 }
@@ -151,7 +150,19 @@ process_exit (void)
       file_close(f);
   }
   file_close (cur->exec_file);
+
   intr_set_level(old_level);
+
+  /* 
+   * Tell children thar their statuses are not needed any more,
+   * So they could be deallocated.
+   */
+  struct list_elem *e = list_begin(&cur->children);
+  while (e != list_end(&cur->children)) {
+    struct thread* child = list_entry (e, struct thread, child_elem);
+    sema_up(&child->wait_for_parent);
+    e = list_remove(&child->child_elem);
+  }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -278,15 +289,13 @@ load (void *argument_data_, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-  lock_acquire(&filesys_lock);
-  file = filesys_open (argument_data->file_name);
-  thread_current()->exec_file = file;
+  lock_acquire(&filesys_lock); // While file_close is not thread safe.
+  file = filesys_open (argument_data->file_name); 
   if (file == NULL)
     {
       printf ("load: %s: open failed\n", argument_data->file_name);
       goto done;
     }
-  file_deny_write(file);
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -371,6 +380,10 @@ load (void *argument_data_, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
+  if (success) {
+    thread_current()->exec_file = file;
+    file_deny_write(file);
+  } else file_close(file);
   lock_release(&filesys_lock);
   return success;
 }

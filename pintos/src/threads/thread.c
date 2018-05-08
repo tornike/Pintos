@@ -360,10 +360,6 @@ thread_exit (void)
 {
   ASSERT (!intr_context ());
 
-#ifdef USERPROG
-  process_exit ();
-#endif
-
   struct thread* curr = thread_current();
 
   /* Release all locks. */
@@ -380,6 +376,7 @@ thread_exit (void)
   intr_set_level(old_level);
 
 #ifdef USERPROG
+  process_exit ();
   sema_up(&curr->status_ready);
   sema_down(&curr->wait_for_parent);
 #endif

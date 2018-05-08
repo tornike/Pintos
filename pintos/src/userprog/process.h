@@ -12,8 +12,6 @@ void process_activate (void);
 
 struct process_argument_data 
 {
-    size_t argc;
-    char* argv[MAX_ARGUMENTS];
     char file_name[512];
     char cmd_line[512];
 

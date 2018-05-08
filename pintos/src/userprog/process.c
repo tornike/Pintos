@@ -505,13 +505,13 @@ setup_stack (void **esp, void *argument_data_)
   bool success = false;
   struct process_argument_data *argument_data = argument_data_;
 
-  int i = 0;
+  size_t argc = 0;
   char *token, *save_ptr;
-  for (token = strtok_r (argument_data->cmd_line, " ", &save_ptr), i = 0; token != NULL; token = strtok_r (NULL, " ", &save_ptr), i++) 
-    argument_data->argv[i] = token;
-  argument_data->argc = i;
-
+  char *argv[MAX_ARGUMENTS];
   void *arg_pointers[MAX_ARGUMENTS];
+  for (token = strtok_r (argument_data->cmd_line, " ", &save_ptr), argc = 0; token != NULL; token = strtok_r (NULL, " ", &save_ptr), argc++) 
+    argv[argc] = token;
+
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL)
     {
@@ -522,9 +522,9 @@ setup_stack (void **esp, void *argument_data_)
         *esp = PHYS_BASE;
 
         /* Place the words at the top of the stack. Save their pointers for future referencing below. */
-        for (i = argument_data->argc - 1; i >= 0; i--) 
+        for (i = argc - 1; i >= 0; i--) 
         {
-          char *arg = argument_data->argv[i];
+          char *arg = argv[i];
           size_t length = (strlen(arg) + 1) * sizeof(char);
           *esp -= length;
           strlcpy(*esp, arg, length);
@@ -541,7 +541,7 @@ setup_stack (void **esp, void *argument_data_)
         *(char **)*esp = NULL;
 
         /* Push the address of each string from right-to-left. */
-        for (i = argument_data->argc - 1; i >= 0; i--) 
+        for (i = argc - 1; i >= 0; i--) 
         {
           *esp -= sizeof(char *);
           *(char **)*esp = arg_pointers[i];
@@ -553,7 +553,7 @@ setup_stack (void **esp, void *argument_data_)
 
         /* Push argc. */
         *esp -= sizeof(int);
-        *(int *)*esp = argument_data->argc;     
+        *(int *)*esp = argc;     
 
         /* Push return address. */
         *esp -= sizeof(void *);

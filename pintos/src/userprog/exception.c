@@ -151,6 +151,7 @@ page_fault (struct intr_frame *f)
   user = (f->error_code & PF_U) != 0;
 
   if (user || is_user_vaddr(fault_addr)) {
+    //if (!not_present) printf("BLIAD\n");
     printf("%s: exit(%d)\n", (char*)&thread_current ()->name, -1);
     thread_exit ();
   } else {

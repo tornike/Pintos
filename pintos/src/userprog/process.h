@@ -14,8 +14,12 @@ struct process_argument_data
 {
     size_t argc;
     char* argv[MAX_ARGUMENTS];
-    char* file_name;
-    char* copy;
+    char file_name[512];
+    char cmd_line[512];
+
+    bool load_success;
+    struct semaphore load_signal;
+    struct thread* parent;
 };
 
 #endif /* userprog/process.h */

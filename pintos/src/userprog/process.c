@@ -33,26 +33,29 @@ static bool load (void *argument_data, void (**eip) (void), void **esp);
 tid_t
 process_execute (const char *file_name)
 {
-  char *fn_copy;
   tid_t tid;
-  struct process_argument_data argument_data;
 
-  sema_init (&temporary, 0);
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page (0);
-  if (fn_copy == NULL)
+  struct process_argument_data* argument_data = palloc_get_page (0);
+  if (argument_data == NULL)
     return TID_ERROR;
-  strlcpy (fn_copy, file_name, PGSIZE);
+  
+  strlcpy (&argument_data->cmd_line, file_name, strlen(file_name) + 1);
+  strlcpy (&argument_data->file_name, file_name, strlen(file_name) + 1);
 
   char *save_ptr;
-  argument_data.file_name = strtok_r ((char*) file_name, " ", &save_ptr);
-  argument_data.copy = fn_copy;
-  
+  strtok_r ((char*) argument_data->file_name, " ", &save_ptr);
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (argument_data.file_name, PRI_DEFAULT, start_process, &argument_data);
-  if (tid == TID_ERROR)
-    palloc_free_page (fn_copy);
+  sema_init(&argument_data->load_signal, 0);
+  argument_data->parent = thread_current();
+  tid = thread_create (argument_data->file_name, PRI_DEFAULT, start_process, argument_data);
+  if (tid != TID_ERROR) { /* Kernel thread created. */
+    sema_down(&argument_data->load_signal);
+    if(!argument_data->load_success) tid = TID_ERROR;
+  }
+  palloc_free_page (argument_data);
   return tid;
 }
 
@@ -72,10 +75,18 @@ start_process (void *argument_data_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (argument_data, &if_.eip, &if_.esp);
 
+
+  argument_data->load_success = success;
+
   /* If load failed, quit. */
-  palloc_free_page (argument_data->copy);
-  if (!success)
+  if (!success) {
+    sema_up(&argument_data->load_signal);
     thread_exit ();
+  }
+
+  struct thread* curr = thread_current();
+  list_push_back(&argument_data->parent->children, &curr->child_elem);
+  sema_up(&argument_data->load_signal);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -97,10 +108,28 @@ start_process (void *argument_data_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED)
-{
-  sema_down (&temporary);
-  return 0;
+process_wait (tid_t child_tid)
+{ 
+  struct thread* curr = thread_current();
+  struct thread* child = NULL;
+
+  struct list_elem *e = list_begin(&curr->children);
+  while (e != list_end(&curr->children)) {
+    struct thread* t = list_entry (e, struct thread, child_elem);
+    if (t->tid == child_tid) {
+      child = t;
+      list_remove(&child->child_elem);
+      break;
+    }
+    e = list_next(e);
+  }
+
+  if (child == NULL) return -1;
+
+  sema_up(&child->wait_for_parent);
+  sema_down(&child->status_ready);
+  
+  return child->exit_status;
 }
 
 /* Free the current process's resources. */
@@ -120,7 +149,7 @@ process_exit (void)
     if (f != NULL)
       file_close(f);
   }
-
+  file_close (cur->exec_file);
   intr_set_level(old_level);
 
   /* Destroy the current process's page directory and switch back
@@ -139,7 +168,6 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
-  sema_up (&temporary);
 }
 
 /* Sets up the CPU for running user code in the current
@@ -251,12 +279,13 @@ load (void *argument_data_, void (**eip) (void), void **esp)
   /* Open executable file. */
   lock_acquire(&filesys_lock);
   file = filesys_open (argument_data->file_name);
-  file_deny_write(file);
+  thread_current()->exec_file = file;
   if (file == NULL)
     {
       printf ("load: %s: open failed\n", argument_data->file_name);
       goto done;
     }
+  file_deny_write(file);
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -341,8 +370,7 @@ load (void *argument_data_, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
-  lock_release(&filesys_lock); 
+  lock_release(&filesys_lock);
   return success;
 }
 
@@ -465,7 +493,7 @@ setup_stack (void **esp, void *argument_data_)
 
   int i = 0;
   char *token, *save_ptr;
-  for (token = strtok_r (argument_data->copy, " ", &save_ptr), i = 0; token != NULL; token = strtok_r (NULL, " ", &save_ptr), i++) 
+  for (token = strtok_r (argument_data->cmd_line, " ", &save_ptr), i = 0; token != NULL; token = strtok_r (NULL, " ", &save_ptr), i++) 
     argument_data->argv[i] = token;
   argument_data->argc = i;
 

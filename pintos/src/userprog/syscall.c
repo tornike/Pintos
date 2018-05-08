@@ -9,6 +9,7 @@
 #include "filesys/file.h"
 #include "threads/vaddr.h"
 #include "devices/input.h"
+#include "userprog/process.h"
 
 
 #define PIECE_SIZE 128
@@ -19,7 +20,7 @@ static int read (int, void*, unsigned);
 static int filesize (int);
 static void seek (int, unsigned);
 static unsigned tell (int);
-
+static void exec (struct intr_frame *f);
 static int open(const char*);
 static void close(int);
 static bool create (const char*, unsigned);
@@ -56,10 +57,10 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f UNUSED)
 {
-  uint32_t* args = ((uint32_t*) f->esp);
-  //printf("System call number: %d\n", args[0]);
 
   if (!is_valid_ptr(f->esp, sizeof(uint32_t))) exit(-1);
+  uint32_t* args = ((uint32_t*) f->esp);
+  //printf("System call number: %d\n", args[0]);
   
   if (args[0] == SYS_WRITE) {
     lock_acquire(&filesys_lock);
@@ -97,9 +98,11 @@ syscall_handler (struct intr_frame *f UNUSED)
     f->eax = tell(fd);
     lock_release(&filesys_lock);
   } else if (args[0] == SYS_EXEC) {
-
+    //lock_acquire(&filesys_lock);
+    exec(f);
+    //lock_release(&filesys_lock);
   } else if (args[0] == SYS_WAIT) {
-
+    f->eax = process_wait(args[1]);
   } else if (args[0] == SYS_OPEN) {
     lock_acquire(&filesys_lock);
     if (!is_valid_ptr(f->esp, sizeof(char *))) exit(-1);
@@ -133,6 +136,15 @@ syscall_handler (struct intr_frame *f UNUSED)
     if (!is_valid_ptr(f->esp, sizeof(int))) exit(-1);
     f->eax = args[1] + 1;
   }
+}
+
+static void
+exec (struct intr_frame *f) {
+  uint32_t* args = ((uint32_t*) f->esp);
+  if (!is_valid_ptr(args, sizeof(uint32_t) + sizeof(char*))) exit(-1);
+  if (!is_valid_string(args[1])) exit(-1);
+  
+  f->eax = process_execute(args[1]);
 }
 
 static int 
@@ -254,7 +266,9 @@ remove (const char *file)
 static void 
 exit (int status)
 {
-  printf("%s: exit(%d)\n", (char*)&thread_current ()->name, status);
+  struct thread* curr = thread_current ();
+  printf("%s: exit(%d)\n", (char*)curr->name, status);
+  curr->exit_status = status;
   thread_exit();
 }
 

@@ -113,6 +113,14 @@ struct thread
     uint32_t *pagedir;                  /* Page directory. */
     struct file* file_descriptors[MAX_FILE_COUNT];
     int next_free_fd;
+
+    struct file* exec_file;
+
+    struct list_elem child_elem;
+    struct list children;
+    int exit_status;
+    struct semaphore wait_for_parent;
+    struct semaphore status_ready;
 #endif
 
     /* Owned by thread.c. */
@@ -158,5 +166,7 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+struct thread* mishiko (tid_t);
 
 #endif /* threads/thread.h */

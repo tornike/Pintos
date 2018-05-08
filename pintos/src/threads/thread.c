@@ -379,6 +379,11 @@ thread_exit (void)
 
   intr_set_level(old_level);
 
+#ifdef USERPROG
+  sema_up(&curr->status_ready);
+  sema_down(&curr->wait_for_parent);
+#endif
+
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
@@ -657,6 +662,11 @@ init_thread (struct thread *t, const char *name, int priority)
   for(i = 0; i < MAX_FILE_COUNT; i++)
     t->file_descriptors[i] = NULL;
   t->next_free_fd = 2;
+
+  list_init(&t->children);
+  t->exit_status = -1;
+  sema_init(&t->wait_for_parent, 0);
+  sema_init(&t->status_ready, 0);
 #endif
 
   enum intr_level old_level = intr_disable ();  

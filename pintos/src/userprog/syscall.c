@@ -23,11 +23,11 @@ static void seek (struct intr_frame *f);
 static void tell (struct intr_frame *f);
 static void exec (struct intr_frame *f);
 static void wait (struct intr_frame *f);
-static void open(struct intr_frame *f);
-static void close(struct intr_frame *f);
+static void open (struct intr_frame *f);
+static void close (struct intr_frame *f);
 static void create (struct intr_frame *f);
 static void remove (struct intr_frame *f);
-static void exit(struct intr_frame *f);
+static void exit (struct intr_frame *f);
 
 static void exit_helper(int status);
 

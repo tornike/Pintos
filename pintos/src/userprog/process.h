@@ -1,6 +1,7 @@
 #ifndef USERPROG_PROCESS_H
 #define USERPROG_PROCESS_H
 #define MAX_ARGUMENTS 64
+#define BUFFER_SIZE 512
 
 #include "threads/thread.h"
 
@@ -12,8 +13,8 @@ void process_activate (void);
 
 struct process_argument_data 
 {
-    char file_name[512];
-    char cmd_line[512];
+    char file_name[BUFFER_SIZE];
+    char cmd_line[BUFFER_SIZE];
 
     bool load_success;
     struct semaphore load_signal;

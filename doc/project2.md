@@ -14,6 +14,7 @@ Design Document for Project 2: User Program
 
 ##### Data Structures
 
+process.h
 ```c
 struct process_argument_data 
 {
@@ -26,9 +27,23 @@ struct process_argument_data
 };
 ```
 
+thread.h
+```c
+    struct file* file_descriptors[MAX_FILE_COUNT];
+    int next_free_fd;
+
+    struct file* exec_file;
+
+    struct list_elem child_elem;
+    struct list children;
+    int exit_status;
+    struct semaphore wait_for_parent;   /* Used to wait for parent to take status */
+    struct semaphore status_ready;      /* Signal parent to take status */
+```
+
 ##### Algorithms
 
-არგუმენტებს, სემაფორას და პროცესის მშობელს ვინახავთ ჩვენს შექმნილ `process_argument_data` სტრუქტურაში, სტრუქტურისთვის გამოყოფილი გვაქვს ერთი ფეიჯი, სადაც ვინახავთ ამ მონაცემებს, რათა არ მოხდეს race condition მშობელსა და შვილებს შორის. როცა ეს სტრუქტურა აღარ გვჭირდება, ცხადია მას ვასუფთავებთ მეხსიერებიდან. შემდეგ `PHYS_BASE`-დან ქვემოთ იზრდება სტეკი პროცესისთვის გადმოცემული არგუმენტებით, რომელიც ტოკენაიზერით იყოფა.
+არგუმენტებს, სემაფორას და პროცესის მშობელს ვინახავთ ჩვენს შექმნილ `process_argument_data` სტრუქტურაში. სტრუქტურის შექმნა დაგვჭირდა იმისათვის, რომ პროცესის არგუმენტებთან ერთად გადაგვეცა დამატებითი ცვლადები სხვა ფუნქციებისთვის. აქ ვინახავთ ფაილის სახელს, სემაფორას და `bool`-ს, რომელშიც ვინახავთ მოხდა თუ არა `load` წარმატებით. სტრუქტურისთვის გამოყოფილი გვაქვს ერთი ფეიჯი, სადაც ვინახავთ ამ მონაცემებს, რათა არ მოხდეს race condition მშობელსა და შვილებს შორის. როცა ეს სტრუქტურა აღარ გვჭირდება, ცხადია მას ვასუფთავებთ მეხსიერებიდან. შემდეგ `PHYS_BASE`-დან ქვემოთ იზრდება სტეკი პროცესისთვის გადმოცემული არგუმენტებით, რომელიც ტოკენაიზერით იყოფა, სტეკის შექმნის დეტალური ალგორითმი მოცემულია პირობაში.
 
 ##### Synchronization
 

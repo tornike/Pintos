@@ -8,26 +8,28 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 #include "devices/input.h"
 #include "userprog/process.h"
+#include "userprog/pagedir.h"
+#include "vm/page.h"
 
-
-#define PIECE_SIZE 128  /* Size of chunk written on console */
+#define PIECE_SIZE 128  /* Size of chunk written on console. */
 
 static void syscall_handler (struct intr_frame *);
 
-static void write (struct intr_frame *f);
-static void read (struct intr_frame *f);
-static void filesize (struct intr_frame *f);
-static void seek (struct intr_frame *f);
-static void tell (struct intr_frame *f);
-static void exec (struct intr_frame *f);
-static void wait (struct intr_frame *f);
-static void open (struct intr_frame *f);
-static void close (struct intr_frame *f);
-static void create (struct intr_frame *f);
-static void remove (struct intr_frame *f);
-static void exit (struct intr_frame *f);
+static void write_handler (struct intr_frame *f);
+static void read_handler (struct intr_frame *f);
+static void filesize_handler (struct intr_frame *f);
+static void seek_handler (struct intr_frame *f);
+static void tell_handler (struct intr_frame *f);
+static void exec_handler (struct intr_frame *f);
+static void wait_handler (struct intr_frame *f);
+static void open_handler (struct intr_frame *f);
+static void close_handler (struct intr_frame *f);
+static void create_handler (struct intr_frame *f);
+static void remove_handler (struct intr_frame *f);
+static void exit_handler (struct intr_frame *f);
 
 static void exit_helper(int status);
 
@@ -41,7 +43,7 @@ syscall_init (void)
 static bool 
 is_valid_ptr (const void* ptr, size_t size) 
 {
-	return ptr != NULL && is_user_vaddr((char*)ptr + size);
+	return ptr != NULL && is_user_vaddr((char *)ptr + size);
 }
 
 static bool
@@ -52,7 +54,7 @@ is_valid_string (const void* ptr)
   {
     if (!is_valid_ptr(ptr, 1)) return false;
     ptr++;
-    if (*(char*)ptr == '\0') return true;
+    if (*(char *)ptr == '\0') return true;
   }
 }
 
@@ -64,18 +66,18 @@ syscall_handler (struct intr_frame *f)
   uint32_t* args = ((uint32_t*) f->esp);
   uint32_t syscall_num = args[0];
   
-  if (syscall_num == SYS_WRITE) write(f);
-  else if (syscall_num == SYS_READ) read(f);
-  else if (syscall_num == SYS_EXEC) exec(f);
-  else if (syscall_num == SYS_WAIT) wait(f);
-  else if (syscall_num == SYS_FILESIZE) filesize(f);
-  else if (syscall_num == SYS_SEEK) seek(f);
-  else if (syscall_num == SYS_TELL) tell(f);
-  else if (syscall_num == SYS_OPEN) open(f);
-  else if (syscall_num == SYS_CLOSE) close(f);
-  else if (syscall_num == SYS_CREATE) create(f);
-  else if (syscall_num == SYS_REMOVE) remove(f);
-  else if (syscall_num == SYS_EXIT) exit(f);
+  if (syscall_num == SYS_WRITE) write_handler(f);
+  else if (syscall_num == SYS_READ) read_handler(f);
+  else if (syscall_num == SYS_EXEC) exec_handler(f);
+  else if (syscall_num == SYS_WAIT) wait_handler(f);
+  else if (syscall_num == SYS_FILESIZE) filesize_handler(f);
+  else if (syscall_num == SYS_SEEK) seek_handler(f);
+  else if (syscall_num == SYS_TELL) tell_handler(f);
+  else if (syscall_num == SYS_OPEN) open_handler(f);
+  else if (syscall_num == SYS_CLOSE) close_handler(f);
+  else if (syscall_num == SYS_CREATE) create_handler(f);
+  else if (syscall_num == SYS_REMOVE) remove_handler(f);
+  else if (syscall_num == SYS_EXIT) exit_handler(f);
   else if (syscall_num == SYS_HALT) shutdown_power_off();
   else if (syscall_num == SYS_PRACTICE) {
     if (!is_valid_ptr(f->esp, sizeof(uint32_t) + sizeof(int))) exit_helper(-1);
@@ -84,7 +86,7 @@ syscall_handler (struct intr_frame *f)
 }
 
 static void
-exec (struct intr_frame *f) {
+exec_handler (struct intr_frame *f) {
   uint32_t* args = ((uint32_t*) f->esp);
   int arguments_size = sizeof(uint32_t) + sizeof(char*);
   if (!is_valid_ptr(args, arguments_size)) exit_helper(-1);
@@ -97,7 +99,7 @@ exec (struct intr_frame *f) {
 }
 
 static void
-wait (struct intr_frame *f) {
+wait_handler (struct intr_frame *f) {
   uint32_t* args = ((uint32_t*) f->esp);
   int arguments_size = sizeof(uint32_t) + sizeof(int);
   if (!is_valid_ptr(args, arguments_size)) exit_helper(-1);
@@ -109,7 +111,7 @@ wait (struct intr_frame *f) {
 }
 
 static void 
-write (struct intr_frame *f)
+write_handler (struct intr_frame *f)
 {
   uint32_t* args = ((uint32_t*) f->esp);
   int arguments_size = sizeof(uint32_t) + sizeof(int) + sizeof(void*) + sizeof(unsigned);
@@ -142,7 +144,7 @@ write (struct intr_frame *f)
 }
 
 static void 
-read (struct intr_frame *f)
+read_handler (struct intr_frame *f)
 {
   uint32_t* args = ((uint32_t*) f->esp);
   int arguments_size = sizeof(uint32_t) + sizeof(int) + sizeof(void*) + sizeof(unsigned);
@@ -176,7 +178,7 @@ read (struct intr_frame *f)
 }
 
 static void
-seek (struct intr_frame* f)
+seek_handler (struct intr_frame* f)
 {
   uint32_t* args = ((uint32_t*) f->esp);
   int arguments_size = sizeof(uint32_t) + sizeof(int) + sizeof(unsigned);
@@ -197,7 +199,7 @@ seek (struct intr_frame* f)
 }
 
 static void 
-tell (struct intr_frame* f)
+tell_handler (struct intr_frame* f)
 {
   uint32_t* args = ((uint32_t*) f->esp);
   int arguments_size = sizeof(uint32_t) + sizeof(int);
@@ -217,7 +219,7 @@ tell (struct intr_frame* f)
 }
 
 static void 
-filesize (struct intr_frame* f) 
+filesize_handler (struct intr_frame* f) 
 {
   uint32_t* args = ((uint32_t*) f->esp);
   int arguments_size = sizeof(uint32_t) + sizeof(int);
@@ -237,7 +239,7 @@ filesize (struct intr_frame* f)
 }
 
 static void 
-open (struct intr_frame* f)
+open_handler (struct intr_frame* f)
 {
   uint32_t* args = ((uint32_t*) f->esp);
   int arguments_size = sizeof(uint32_t) + sizeof(char*);
@@ -267,7 +269,7 @@ open (struct intr_frame* f)
 }
 
 static void 
-close (struct intr_frame* f)
+close_handler (struct intr_frame* f)
 {
   uint32_t* args = ((uint32_t*) f->esp);
   int arguments_size = sizeof(uint32_t) + sizeof(int);
@@ -291,7 +293,7 @@ close (struct intr_frame* f)
 }
 
 static void 
-create (struct intr_frame* f)
+create_handler (struct intr_frame* f)
 {
   uint32_t* args = ((uint32_t*) f->esp);
   int arguments_size = sizeof(uint32_t) + sizeof(char*) + sizeof(unsigned);
@@ -308,7 +310,7 @@ create (struct intr_frame* f)
 }
 
 static void 
-remove (struct intr_frame* f)
+remove_handler (struct intr_frame* f)
 {
   uint32_t* args = ((uint32_t*) f->esp);
   int arguments_size = sizeof(uint32_t) + sizeof(char*);
@@ -324,7 +326,8 @@ remove (struct intr_frame* f)
 }
 
 static void
-exit(struct intr_frame *f) {
+exit_handler (struct intr_frame *f) 
+{
   uint32_t* args = ((uint32_t*) f->esp);
   int arguments_size = sizeof(uint32_t) + sizeof(int);
   if (!is_valid_ptr(args, arguments_size)) exit_helper(-1);
@@ -343,3 +346,50 @@ exit_helper (int status)
   thread_exit();
 }
 
+static mapid_t
+mmap_handler (int fd, void *addr) 
+{
+  if (fd == 0 || fd == 1) return -1;
+
+  lock_acquire(&filesys_lock);  
+  struct file *file = file_reopen(thread_current()->file_descriptors[fd]);
+  size_t file_size = file_length(file);
+  lock_release(&filesys_lock);  
+
+  if (file == NULL || file_size <= 0) return MAP_FAILED;
+  if (addr == NULL || pg_ofs(addr) != 0) return MAP_FAILED;
+
+  void *temp = addr;
+  while (temp < (temp + file_size)) {
+    if (pagedir_get_page(thread_current()->pagedir, temp) != NULL) return MAP_FAILED;
+    temp = (char *)temp + PGSIZE;
+  }
+
+  off_t offset = 0;
+  while (offset < file_size) {
+    size_t read_bytes = file_size < PGSIZE ? file_size : PGSIZE;
+
+    /* Get virtual page of memory. */
+    struct page *page = malloc(sizeof(struct page));
+    if (page == NULL)
+      return MAP_FAILED;
+
+    /* Setup page with correct values. */
+    struct file_info *file_info = NULL;
+    file_info = malloc(sizeof(struct file_info));
+    file_info->file = file;
+    file_info->offset = offset;
+    file_info->length = read_bytes;
+
+    hash_insert(&thread_current()->sup_page_table, &page->elem);    
+
+    page->v_addr = addr;
+    page->frame = NULL;
+    page->writable = true;
+    page->file_info = file_info;
+
+    offset += read_bytes;
+    addr += PGSIZE;
+  }
+  return 1337; // !!
+}

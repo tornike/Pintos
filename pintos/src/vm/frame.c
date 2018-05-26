@@ -9,17 +9,17 @@ void frame_init() {
 }
 
 
-static bool install_page_tmp (void *upage, void *kpage, bool writable);
+static bool install_page (void *upage, void *kpage, bool writable);
 
 
 bool frame_allocate (struct frame *frame, enum palloc_flags flags) {
     bool result = false;
-    lock_acquire(&frame_lock);
     frame->p_addr = palloc_get_page (flags);
+    lock_acquire(&frame_lock);
     if (frame->p_addr == NULL) { printf("NO SPACEEEE\n"); return false; } // no space eviction.
-    result = install_page_tmp (frame->u_page->v_addr, frame->p_addr, frame->u_page->writable);
-    if (!result) printf("Install page failed\n");
+    result = install_page (frame->u_page->v_addr, frame->p_addr, frame->u_page->writable);
     lock_release(&frame_lock);
+    if (!result) printf("Install page failed\n");
     return result;
 }
 
@@ -35,7 +35,7 @@ bool frame_allocate (struct frame *frame, enum palloc_flags flags) {
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
 static bool
-install_page_tmp (void *upage, void *kpage, bool writable)
+install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
 

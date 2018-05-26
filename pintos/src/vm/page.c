@@ -33,14 +33,14 @@ bool load_page (struct page *sup_page) {
     if (frame == NULL) return false;
     frame->u_page = sup_page;
     
-    if (sup_page->file_info != NULL) { // From file.
-        if(!frame_allocate(frame, PAL_USER)) {
-            free(frame);
-            return false;
-        }
-        list_push_back(&frame_table, &frame->elem);
-        sup_page->frame = frame;
+    if(!frame_allocate(frame, PAL_USER)) {
+        free(frame);
+        return false;
+    }
+    list_push_back(&frame_table, &frame->elem);
+    sup_page->frame = frame;
 
+    if (sup_page->file_info != NULL) { /* File page. */
         lock_acquire(&filesys_lock);
         file_seek(sup_page->file_info->file, sup_page->file_info->offset);
         off_t read_size = file_read(sup_page->file_info->file, sup_page->frame->p_addr, sup_page->file_info->length);
@@ -50,8 +50,7 @@ bool load_page (struct page *sup_page) {
         memset (sup_page->frame->p_addr + read_size, 0, PGSIZE - read_size);
         return true;
     } else {
-        frame_allocate(frame, PAL_USER | PAL_ZERO);
-        sup_page->frame = frame;
+        memset (sup_page->frame->p_addr, 0, PGSIZE); /* Just zeroe page. */
         return true;
     }
 }

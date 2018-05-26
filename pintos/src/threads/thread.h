@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "threads/synch.h"	
 #include "threads/fixed-point.h"
+#include <hash.h>
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -122,6 +123,8 @@ struct thread
     int exit_status;
     struct semaphore wait_for_parent;   /* Used to wait for parent to take status */
     struct semaphore status_ready;      /* Signal parent to take status */
+
+    struct hash sup_page_table;
 #endif
 
     /* Owned by thread.c. */

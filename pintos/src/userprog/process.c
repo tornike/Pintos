@@ -19,6 +19,8 @@
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
+#include "vm/page.h"
 
 #include "userprog/syscall.h"
 
@@ -83,8 +85,7 @@ start_process (void *argument_data_)
     thread_exit ();
   }
 
-  struct thread* curr = thread_current();
-  list_push_back(&argument_data->parent->children, &curr->child_elem);
+  list_push_back(&argument_data->parent->children, &thread_current()->child_elem);
   sema_up(&argument_data->load_signal);
 
   /* Start the user process by simulating a return from an
@@ -282,6 +283,7 @@ load (void *argument_data_, void (**eip) (void), void **esp)
   bool success = false;
   int i;
 
+  hash_init(&t->sup_page_table, page_hash, page_less, NULL); // ????
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL)
@@ -368,11 +370,14 @@ load (void *argument_data_, void (**eip) (void), void **esp)
           break;
         }
     }
-
+  
+  lock_release(&filesys_lock);
   /* Set up stack. */
-  if (!setup_stack (esp, argument_data))
+  if (!setup_stack (esp, argument_data)) {
+    lock_acquire(&filesys_lock);
     goto done;
-
+  }
+  lock_acquire(&filesys_lock);
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
 
@@ -383,7 +388,8 @@ load (void *argument_data_, void (**eip) (void), void **esp)
   if (success) {
     thread_current()->exec_file = file;
     file_deny_write(file);
-  } else file_close(file);
+  } else
+    file_close(file);
   lock_release(&filesys_lock);
   return success;
 }
@@ -458,8 +464,8 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
-
-  file_seek (file, ofs);
+  
+  //file_seek(file, ofs);
   while (read_bytes > 0 || zero_bytes > 0)
     {
       /* Calculate how to fill this page.
@@ -468,27 +474,54 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
-      if (kpage == NULL)
+      //  /* Get a page of memory. */
+      // uint8_t *kpage = palloc_get_page (PAL_USER);
+      // if (kpage == NULL)
+      //   return false;
+
+      // /* Load this page. */
+      // if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
+      //   {
+      //     palloc_free_page (kpage);
+      //     return false;
+      //   }
+      // memset (kpage + page_read_bytes, 0, page_zero_bytes);
+
+      // /* Add the page to the process's address space. */
+      // if (!install_page (upage, kpage, writable))
+      //   {
+      //     palloc_free_page (kpage);
+      //     return false;
+      //   }
+      
+
+      /* Get virtual page of memory. */
+      struct page *page = malloc(sizeof(struct page));
+      if (page == NULL)
         return false;
-
-      /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
-          palloc_free_page (kpage);
+      
+      struct file_info* f_info = NULL;
+      if (page_read_bytes != 0) {
+        f_info = malloc(sizeof(struct file_info));
+        if (f_info == NULL)
           return false;
-        }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
 
-      /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable))
-        {
-          palloc_free_page (kpage);
-          return false;
-        }
+        /* Prepare file_info page. */
+        f_info->file = file;
+        f_info->offset = ofs;
+        f_info->length = page_read_bytes;
+      }
+      
+      /* Prepare virtual page. */
+      page->v_addr = upage;
+      page->frame = NULL;
+      page->writable = writable;
+      page->file_info = f_info;
 
+      hash_insert(&thread_current()->sup_page_table, &page->elem);
+      
       /* Advance. */
+      ofs += page_read_bytes;
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
       upage += PGSIZE;

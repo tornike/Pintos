@@ -4,7 +4,7 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-
+#include "vm/page.h"
 #include "threads/vaddr.h"
 
 /* Number of page faults processed. */
@@ -110,6 +110,19 @@ kill (struct intr_frame *f)
     }
 }
 
+/* Returns the page containing the given virtual address,
+   or a null pointer if no such page exists. */
+static struct page *
+page_lookup (struct hash* pages, void *address)
+{
+  struct page p;
+  struct hash_elem *e;
+
+  p.v_addr = address;
+  e = hash_find (pages, &p.elem);
+  return e != NULL ? hash_entry (e, struct page, elem) : NULL;
+}
+
 /* Page fault handler.  This is a skeleton that must be filled in
    to implement virtual memory.  Some solutions to project 2 may
    also require modifying this code.
@@ -151,8 +164,15 @@ page_fault (struct intr_frame *f)
   user = (f->error_code & PF_U) != 0;
 
   if (user || is_user_vaddr(fault_addr)) {
-    printf("%s: exit(%d)\n", (char*)thread_current ()->name, -1);
-    thread_exit ();
+    void *v_addr = fault_addr - (size_t)fault_addr % PGSIZE;
+    struct page *u_page = page_lookup(&thread_current ()->sup_page_table, v_addr);
+    if (u_page == NULL) { // Invalid address
+      printf("%s: exit(%d)\n", (char*)thread_current ()->name, -1);
+      thread_exit ();
+    } else {
+      if(!load_page (u_page))
+        printf("Page Loading Failed\n");
+    }
   } else {
     kill (f);
   }

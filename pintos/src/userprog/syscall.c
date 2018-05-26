@@ -57,9 +57,9 @@ is_valid_string (const void* ptr)
 }
 
 static void
-syscall_handler (struct intr_frame *f UNUSED)
+syscall_handler (struct intr_frame *f)
 {
-
+  
   if (!is_valid_ptr(f->esp, sizeof(uint32_t))) exit_helper(-1);
   uint32_t* args = ((uint32_t*) f->esp);
   uint32_t syscall_num = args[0];

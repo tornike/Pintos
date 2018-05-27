@@ -27,6 +27,8 @@ static void exec_handler (struct intr_frame *f);
 static void wait_handler (struct intr_frame *f);
 static void open_handler (struct intr_frame *f);
 static void close_handler (struct intr_frame *f);
+static void mmap_handler (struct intr_frame *f);
+static void munmap_handler (struct intr_frame *f);
 static void create_handler (struct intr_frame *f);
 static void remove_handler (struct intr_frame *f);
 static void exit_handler (struct intr_frame *f);
@@ -76,13 +78,15 @@ syscall_handler (struct intr_frame *f)
   else if (syscall_num == SYS_OPEN) open_handler(f);
   else if (syscall_num == SYS_CLOSE) close_handler(f);
   else if (syscall_num == SYS_CREATE) create_handler(f);
+  else if (syscall_num == SYS_MMAP) mmap_handler(f);
+  else if (syscall_num == SYS_MUNMAP) munmap_handler(f);
   else if (syscall_num == SYS_REMOVE) remove_handler(f);
   else if (syscall_num == SYS_EXIT) exit_handler(f);
   else if (syscall_num == SYS_HALT) shutdown_power_off();
   else if (syscall_num == SYS_PRACTICE) {
     if (!is_valid_ptr(f->esp, sizeof(uint32_t) + sizeof(int))) exit_helper(-1);
     f->eax = args[1] + 1;
-  }
+  } else exit_helper(-1);
 }
 
 static void
@@ -346,19 +350,34 @@ exit_helper (int status)
   thread_exit();
 }
 
-static mapid_t
+
+static struct mmap *
+tablic_lookup (struct hash *mmaps, mapid_t mapping)
+{
+  struct mmap m;
+  struct hash_elem *e;
+
+  m.mapping = mapping;
+  e = hash_find (mmaps, &m.elem);
+  return e != NULL ? hash_entry (e, struct mmap, elem) : NULL;
+}
+
+
+static void
 mmap_handler (struct intr_frame *f) 
 {
-  uint32_t* args = ((uint32_t*) f->esp);
-  int arguments_size = sizeof(int) + sizeof(void *);
+  uint32_t *args = ((uint32_t *) f->esp);
+  int arguments_size = sizeof(uint32_t) + sizeof(int) + sizeof(void *);
   if (!is_valid_ptr(args, arguments_size)) exit_helper(-1);
 
   /* Arguments */
   int fd = args[1];
   void *addr = args[2];
 
-  if (fd <= 1 || fd >= MAX_FILE_COUNT) return MAP_FAILED;
-
+  if (fd <= 1 || fd >= MAX_FILE_COUNT || addr == NULL) {
+    f->eax = MAP_FAILED;
+    return;
+  }
   struct thread *curr = thread_current();
 
   lock_acquire(&filesys_lock);  
@@ -368,48 +387,61 @@ mmap_handler (struct intr_frame *f)
 
   if (!is_valid_ptr(addr, file_size)) exit_helper(-1);
 
-  if (file == NULL || file_size <= 0) return MAP_FAILED;
-  if (pg_ofs(addr) != 0) return MAP_FAILED;
+  if (file == NULL || file_size <= 0 || pg_ofs(addr) != 0) {
+    f->eax = MAP_FAILED;
+    return;
+  }  
 
   uint8_t *temp = addr;
-  while (temp < (temp + file_size)) {
-    if (pagedir_get_page(curr->pagedir, temp) != NULL) return MAP_FAILED;
+  while (temp < addr + file_size) {
+    if (page_lookup(&curr->sup_page_table, temp) != NULL) {
+      f->eax = MAP_FAILED;
+      return;
+    }
     temp += PGSIZE;
   }
 
   off_t offset = 0;
-  while (offset < file_size) {
-    size_t read_bytes = file_size < PGSIZE ? file_size : PGSIZE;
+  size_t read_bytes = file_size;
+  while (read_bytes != 0) {
+    size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
 
     /* Get virtual page of memory. */
     struct page *page = malloc(sizeof(struct page));
-    if (page == NULL)
-      return MAP_FAILED;
+    if (page == NULL) {
+      f->eax = MAP_FAILED;
+      return;
+    }
 
     /* Setup page with correct values. */
     struct file_info *file_info = malloc(sizeof(struct file_info));
     if (file_info == NULL) {
       free(page);
-      return MAP_FAILED;
+      f->eax = MAP_FAILED;
+      return;
     }
     file_info->file = file;
     file_info->offset = offset;
-    file_info->length = read_bytes;
-
-    hash_insert(&curr->sup_page_table, &page->elem);    
+    file_info->length = page_read_bytes;
 
     page->v_addr = addr;
     page->frame = NULL;
     page->writable = true;
     page->file_info = file_info;
 
-    offset += read_bytes;
+    hash_insert(&curr->sup_page_table, &page->elem);
+
+    read_bytes -= page_read_bytes;
+    offset += page_read_bytes;
     addr += PGSIZE;
   }
 
   struct mmap *m = malloc(sizeof(struct mmap));
-  if (m == NULL)
-    return MAP_FAILED;
+  if (m == NULL) {
+    f->eax = MAP_FAILED;
+    return;
+  }
+    
   m->mapping = page_get_mapid();
   m->file = file;
   m->start_addr = addr;
@@ -417,5 +449,10 @@ mmap_handler (struct intr_frame *f)
 
   hash_insert(&curr->mapping_table, &m->elem);
 
-  return m->mapping;
+  f->eax = m->mapping;
 }
+
+static void munmap_handler (struct intr_frame *f) {
+  return;
+}
+

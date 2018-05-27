@@ -111,21 +111,8 @@ kill (struct intr_frame *f)
     }
 }
 
-/* Returns the page containing the given virtual address,
-   or a null pointer if no such page exists. */
-static struct page *
-page_lookup (struct hash* pages, void *address)
-{
-  struct page p;
-  struct hash_elem *e;
-
-  p.v_addr = address;
-  e = hash_find (pages, &p.elem);
-  return e != NULL ? hash_entry (e, struct page, elem) : NULL;
-}
 
 /* Page Fault helpers */
-
 static void
 kill_process(void) {
   printf("%s: exit(%d)\n", (char*)thread_current ()->name, -1);

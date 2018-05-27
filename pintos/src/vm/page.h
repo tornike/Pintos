@@ -26,6 +26,7 @@ struct page {
 
 unsigned page_hash (const struct hash_elem*, void* UNUSED);
 bool page_less (const struct hash_elem*, const struct hash_elem*, void* UNUSED);
+struct page *page_lookup (struct hash*, void *);
 
 struct mmap {
     mapid_t mapping;

@@ -28,44 +28,64 @@ page_less (const struct hash_elem *a_, const struct hash_elem *b_,
 int next_free_mapid = 0;
 
 int page_get_mapid () {
-    return next_free_mapid++;
+  return next_free_mapid++;
 }
 
-unsigned mmap_hash (const struct hash_elem *m_, void *aux UNUSED) { return 0; }
-bool mmap_less (const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED) { return false;}
+unsigned mmap_hash (const struct hash_elem *m_, void *aux UNUSED) {
+  const struct mmap *m = hash_entry (m_, struct mmap, elem);
+  return hash_bytes (&m->mapping, sizeof(m->mapping));
+}
+
+bool mmap_less (const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED) { 
+  const struct mmap *a = hash_entry (a_, struct mmap, elem);
+  const struct mmap *b = hash_entry (b_, struct mmap, elem);
+
+  return a->mapping < b->mapping;  
+}
 
 bool load_page (struct page *sup_page) {
-    ASSERT(sup_page->frame == NULL);
+  ASSERT(sup_page->frame == NULL);
 
-    bool status = false;
+  bool status = false;
 
-    struct frame *frame = malloc(sizeof(struct frame));
-    if (frame == NULL) return false;
-    frame->u_page = sup_page;
-    
-    if(!frame_allocate(frame, PAL_USER)) {
-        free(frame);
-        return false;
-    }
-    list_push_back(&frame_table, &frame->elem);
-    sup_page->frame = frame;
+  struct frame *frame = malloc(sizeof(struct frame));
+  if (frame == NULL) return false;
+  frame->u_page = sup_page;
+  
+  if(!frame_allocate(frame, PAL_USER)) {
+      free(frame);
+      return false;
+  }
+  list_push_back(&frame_table, &frame->elem);
+  sup_page->frame = frame;
 
-    if (sup_page->file_info != NULL) { /* File page. */
-        lock_acquire(&filesys_lock);
-        file_seek(sup_page->file_info->file, sup_page->file_info->offset);
-        off_t read_size = file_read(sup_page->file_info->file, sup_page->frame->p_addr, sup_page->file_info->length);
-        lock_release(&filesys_lock);
-        
-        if (read_size != sup_page->file_info->length) return false;
-        memset (sup_page->frame->p_addr + read_size, 0, PGSIZE - read_size);
-        status = true;
-    } else {
-        memset (sup_page->frame->p_addr, 0, PGSIZE); /* Just zeroe page. */
-        status = true;
-    }
-    return status;
+  if (sup_page->file_info != NULL) { /* File page. */
+      lock_acquire(&filesys_lock);
+      file_seek(sup_page->file_info->file, sup_page->file_info->offset);
+      off_t read_size = file_read(sup_page->file_info->file, sup_page->frame->p_addr, sup_page->file_info->length);
+      lock_release(&filesys_lock);
+      if (read_size != sup_page->file_info->length) return false;
+      memset (sup_page->frame->p_addr + read_size, 0, PGSIZE - read_size);
+      status = true;
+  } else {
+      memset (sup_page->frame->p_addr, 0, PGSIZE); /* Just zeroe page. */
+      status = true;
+  }
+  return status;
 }
 
+/* Returns the page containing the given virtual address,
+   or a null pointer if no such page exists. */
+struct page *
+page_lookup (struct hash *pages, void *address)
+{
+  struct page p;
+  struct hash_elem *e;
+
+  p.v_addr = address;
+  e = hash_find (pages, &p.elem);
+  return e != NULL ? hash_entry (e, struct page, elem) : NULL;
+}
 
 
 

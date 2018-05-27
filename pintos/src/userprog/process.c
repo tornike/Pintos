@@ -284,6 +284,7 @@ load (void *argument_data_, void (**eip) (void), void **esp)
   int i;
 
   hash_init(&t->sup_page_table, page_hash, page_less, NULL); // ????
+  hash_init(&t->mapping_table, mmap_hash, mmap_less, NULL); // ????
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL)
@@ -371,13 +372,11 @@ load (void *argument_data_, void (**eip) (void), void **esp)
         }
     }
   
-  lock_release(&filesys_lock);
   /* Set up stack. */
   if (!setup_stack (esp, argument_data)) {
-    lock_acquire(&filesys_lock);
     goto done;
   }
-  lock_acquire(&filesys_lock);
+  
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
 
@@ -479,8 +478,10 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       struct file_info* f_info = NULL;
       if (page_read_bytes != 0) {
         f_info = malloc(sizeof(struct file_info));
-        if (f_info == NULL)
+        if (f_info == NULL) {
+          free(page);
           return false;
+        }
 
         /* Prepare file_info page. */
         f_info->file = file;
@@ -534,7 +535,10 @@ setup_stack (void **esp, void *argument_data_)
       success = load_page(page);
       if (success) 
       {
-        hash_insert(&thread_current()->sup_page_table, &page->elem);
+        struct thread *curr = thread_current ();
+        hash_insert(&curr->sup_page_table, &page->elem);
+        
+        curr->saved_sp = page->v_addr - PGSIZE; /* Save next unmaped page of stack */
 
         int i;
         *esp = PHYS_BASE;

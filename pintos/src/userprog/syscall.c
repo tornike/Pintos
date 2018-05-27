@@ -347,22 +347,34 @@ exit_helper (int status)
 }
 
 static mapid_t
-mmap_handler (int fd, void *addr) 
+mmap_handler (struct intr_frame *f) 
 {
-  if (fd == 0 || fd == 1) return -1;
+  uint32_t* args = ((uint32_t*) f->esp);
+  int arguments_size = sizeof(int) + sizeof(void *);
+  if (!is_valid_ptr(args, arguments_size)) exit_helper(-1);
+
+  /* Arguments */
+  int fd = args[1];
+  void *addr = args[2];
+
+  if (fd <= 1 || fd >= MAX_FILE_COUNT) return MAP_FAILED;
+
+  struct thread *curr = thread_current();
 
   lock_acquire(&filesys_lock);  
-  struct file *file = file_reopen(thread_current()->file_descriptors[fd]);
+  struct file *file = file_reopen(curr->file_descriptors[fd]);
   size_t file_size = file_length(file);
-  lock_release(&filesys_lock);  
+  lock_release(&filesys_lock);
+
+  if (!is_valid_ptr(addr, file_size)) exit_helper(-1);
 
   if (file == NULL || file_size <= 0) return MAP_FAILED;
-  if (addr == NULL || pg_ofs(addr) != 0) return MAP_FAILED;
+  if (pg_ofs(addr) != 0) return MAP_FAILED;
 
-  void *temp = addr;
+  uint8_t *temp = addr;
   while (temp < (temp + file_size)) {
-    if (pagedir_get_page(thread_current()->pagedir, temp) != NULL) return MAP_FAILED;
-    temp = (char *)temp + PGSIZE;
+    if (pagedir_get_page(curr->pagedir, temp) != NULL) return MAP_FAILED;
+    temp += PGSIZE;
   }
 
   off_t offset = 0;
@@ -375,13 +387,16 @@ mmap_handler (int fd, void *addr)
       return MAP_FAILED;
 
     /* Setup page with correct values. */
-    struct file_info *file_info = NULL;
-    file_info = malloc(sizeof(struct file_info));
+    struct file_info *file_info = malloc(sizeof(struct file_info));
+    if (file_info == NULL) {
+      free(page);
+      return MAP_FAILED;
+    }
     file_info->file = file;
     file_info->offset = offset;
     file_info->length = read_bytes;
 
-    hash_insert(&thread_current()->sup_page_table, &page->elem);    
+    hash_insert(&curr->sup_page_table, &page->elem);    
 
     page->v_addr = addr;
     page->frame = NULL;
@@ -391,5 +406,16 @@ mmap_handler (int fd, void *addr)
     offset += read_bytes;
     addr += PGSIZE;
   }
-  return 1337; // !!
+
+  struct mmap *m = malloc(sizeof(struct mmap));
+  if (m == NULL)
+    return MAP_FAILED;
+  m->mapping = page_get_mapid();
+  m->file = file;
+  m->start_addr = addr;
+  m->end_addr = addr - PGSIZE;
+
+  hash_insert(&curr->mapping_table, &m->elem);
+
+  return m->mapping;
 }

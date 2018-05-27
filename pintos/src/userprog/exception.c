@@ -6,6 +6,7 @@
 #include "threads/thread.h"
 #include "vm/page.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -123,6 +124,52 @@ page_lookup (struct hash* pages, void *address)
   return e != NULL ? hash_entry (e, struct page, elem) : NULL;
 }
 
+/* Page Fault helpers */
+
+static void
+kill_process(void) {
+  printf("%s: exit(%d)\n", (char*)thread_current ()->name, -1);
+  thread_exit ();
+}
+
+static bool
+can_stack_grow (void *esp, void *fault_addr) {
+  return ((uint8_t *)esp - (uint8_t *)fault_addr == 4 
+          || (uint8_t *)esp - (uint8_t *)fault_addr == 32 
+          || fault_addr >= esp);
+}
+
+static bool
+stack_grow (void *v_addr) {
+  struct thread *curr = thread_current ();
+    
+  struct page *u_page = NULL;
+  while (curr->saved_sp != (uint8_t *)v_addr - PGSIZE) {
+    u_page = malloc(sizeof(struct page));
+    if (u_page == NULL)
+      return false;
+    
+    /* Prepare virtual page. */
+    u_page->v_addr = curr->saved_sp;
+    u_page->frame = NULL;
+    u_page->writable = true;
+    u_page->file_info = NULL;
+
+    hash_insert(&thread_current()->sup_page_table, &u_page->elem);
+
+    curr->saved_sp -= PGSIZE;
+  }
+  
+  if(!load_page (u_page)) {
+    printf("Page Loading Failed\n");
+    free(u_page);
+    return false;
+  }
+
+  return true;
+}
+
+
 /* Page fault handler.  This is a skeleton that must be filled in
    to implement virtual memory.  Some solutions to project 2 may
    also require modifying this code.
@@ -137,8 +184,8 @@ page_lookup (struct hash* pages, void *address)
 static void
 page_fault (struct intr_frame *f)
 {
-  bool not_present UNUSED;  /* True: not-present page, false: writing r/o page. */
-  bool write UNUSED;        /* True: access was write, false: access was read. */
+  bool not_present;  /* True: not-present page, false: writing r/o page. */
+  bool write UNUSED; /* True: access was write, false: access was read. */
   bool user;         /* True: access by user, false: access by kernel. */
   void *fault_addr;  /* Fault address. */
 
@@ -163,18 +210,26 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  if (user || is_user_vaddr(fault_addr)) {
-    void *v_addr = fault_addr - (size_t)fault_addr % PGSIZE;
-    struct page *u_page = page_lookup(&thread_current ()->sup_page_table, v_addr);
-    if (u_page == NULL) { // Invalid address
-      printf("%s: exit(%d)\n", (char*)thread_current ()->name, -1);
-      thread_exit ();
+  if (!not_present) { // || is_kernel_vaddr (fault_addr)
+    if (user || is_user_vaddr(fault_addr)) kill_process();
+    kill(f);
+  }
+
+  /* vaddr is in user space and page is not_present */
+  void *v_addr = pg_round_down(fault_addr);
+  struct page *u_page = page_lookup(&thread_current ()->sup_page_table, v_addr);
+  if (u_page == NULL) {
+    if (user && can_stack_grow(f->esp, fault_addr)) {
+      if (!stack_grow (v_addr))
+        kill_process ();
     } else {
-      if(!load_page (u_page))
-        printf("Page Loading Failed\n");
+      kill_process ();
     }
   } else {
-    kill (f);
+    if(!load_page (u_page)) {
+      printf("Page Loading Failed\n");
+      kill_process();
+    }
   }
 
   /* To implement virtual memory, delete the rest of the function

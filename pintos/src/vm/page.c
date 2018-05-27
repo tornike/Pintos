@@ -25,9 +25,19 @@ page_less (const struct hash_elem *a_, const struct hash_elem *b_,
   return a->v_addr < b->v_addr;
 }
 
+int next_free_mapid = 0;
+
+int page_get_mapid () {
+    return next_free_mapid++;
+}
+
+unsigned mmap_hash (const struct hash_elem *m_, void *aux UNUSED) { return 0; }
+bool mmap_less (const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED) { return false;}
 
 bool load_page (struct page *sup_page) {
     ASSERT(sup_page->frame == NULL);
+
+    bool status = false;
 
     struct frame *frame = malloc(sizeof(struct frame));
     if (frame == NULL) return false;
@@ -48,11 +58,12 @@ bool load_page (struct page *sup_page) {
         
         if (read_size != sup_page->file_info->length) return false;
         memset (sup_page->frame->p_addr + read_size, 0, PGSIZE - read_size);
-        return true;
+        status = true;
     } else {
         memset (sup_page->frame->p_addr, 0, PGSIZE); /* Just zeroe page. */
-        return true;
+        status = true;
     }
+    return status;
 }
 
 

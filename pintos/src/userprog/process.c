@@ -69,6 +69,11 @@ start_process (void *argument_data_)
   struct intr_frame if_;
   bool success;
 
+  /* Initialize process suplemental page table and mapping table. */
+  struct thread *curr = thread_current();
+  hash_init(&curr->sup_page_table, page_hash, page_less, NULL);
+  hash_init(&curr->mapping_table, mmap_hash, mmap_less, NULL);
+
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -85,7 +90,7 @@ start_process (void *argument_data_)
     thread_exit ();
   }
 
-  list_push_back(&argument_data->parent->children, &thread_current()->child_elem);
+  list_push_back(&argument_data->parent->children, &curr->child_elem);
   sema_up(&argument_data->load_signal);
 
   /* Start the user process by simulating a return from an
@@ -166,6 +171,7 @@ process_exit (void)
   }
 
   hash_destroy(&cur->mapping_table, mmap_mapping_table_dest);
+  hash_destroy(&cur->sup_page_table, page_suplemental_table_dest);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -285,8 +291,6 @@ load (void *argument_data_, void (**eip) (void), void **esp)
   bool success = false;
   int i;
 
-  hash_init(&t->sup_page_table, page_hash, page_less, NULL); // ????
-  hash_init(&t->mapping_table, mmap_hash, mmap_less, NULL); // ????
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL)
@@ -520,9 +524,8 @@ setup_stack (void **esp, void *argument_data_)
 
   if (page != NULL)
     {
-      page_load(page);
-      success = true;
-      if (success) 
+      success = page_load(page);
+      if (success)
       { 
         thread_current()->saved_sp = page->v_addr - PGSIZE; /* Save next unmaped page of stack */
 
@@ -567,8 +570,6 @@ setup_stack (void **esp, void *argument_data_)
         *esp -= sizeof(void *);
         *(void **)*esp = NULL;
       }
-      else
-        free(page);
     }
   return success;
 }

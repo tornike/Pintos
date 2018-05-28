@@ -11,11 +11,11 @@ struct list frame_table;
 struct lock frame_lock;
 
 struct frame {
-    uint8_t *p_addr; /* Physical address of the page */
-    struct page *u_page; /* Pointer to user suplemental page */
-    bool pinned;
+  uint8_t *p_addr; /* Physical address of the page */
+  struct page *u_page; /* Pointer to user suplemental page */
+  bool pinned;
 
-    struct list_elem elem;
+  struct list_elem elem;
 };
 
 

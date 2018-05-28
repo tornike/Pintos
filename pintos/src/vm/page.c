@@ -1,11 +1,9 @@
 #include "vm/page.h"
 #include "threads/thread.h"
-#include "threads/palloc.h"
 #include "threads/vaddr.h"
 #include <string.h>
 #include "threads/malloc.h"
 #include "userprog/syscall.h" // for filesys_lock
-#include <stdio.h>
 #include "userprog/pagedir.h"
 
 /* 
@@ -26,6 +24,12 @@ struct page *page_allocate (uint8_t *v_addr, bool writable, struct file_info *fi
   return page;
 }
 
+/* 
+ * Marks suplemental page address as not present, 
+ * Deallocates it and all it's resources.
+ * 
+ * Before deallocating, this page must be removed from hash table.
+ */
 void page_deallocate (struct page *page) {
   pagedir_clear_page(thread_current()->pagedir, page->v_addr);
   if (page->frame != NULL)
@@ -72,8 +76,9 @@ page_lookup (struct hash *pages, void *address)
   return e != NULL ? hash_entry (e, struct page, elem) : NULL;
 }
 
+/* Write data back to file if page is dirty */
 void page_unmap(struct page *page) {
-  if (page->file_info == NULL) return;
+  ASSERT (page->file_info != NULL);
   if (page->frame != NULL && pagedir_is_dirty(thread_current()->pagedir, page->v_addr)) {
     lock_acquire(&filesys_lock);
     file_seek(page->file_info->file, page->file_info->offset);
@@ -82,16 +87,77 @@ void page_unmap(struct page *page) {
   }
 }
 
+/* Adds a mapping from user virtual address UPAGE to kernel
+   virtual address KPAGE to the page table.
+   If WRITABLE is true, the user process may modify the page;
+   otherwise, it is read-only.
+   UPAGE must not already be mapped.
+   KPAGE should probably be a page obtained from the user pool
+   with palloc_get_page().
+   Returns true on success, false if UPAGE is already mapped or
+   if memory allocation fails. */
+static bool
+install_page (void *upage, void *kpage, bool writable)
+{
+  struct thread *t = thread_current ();
+
+  /* Verify that there's not already a page at that virtual
+     address, then map our page there. */
+  return (pagedir_get_page (t->pagedir, upage) == NULL
+          && pagedir_set_page (t->pagedir, upage, kpage, writable));
+}
+
+/*
+ * Loads content of the virtual page in memory.
+ * Exits current process if loading fails.
+ */
+bool page_load (struct page *sup_page) {
+  ASSERT(sup_page->frame == NULL);
+
+  struct frame *frame = frame_allocate(sup_page);
+  ASSERT (frame != NULL);
+
+  if (sup_page->file_info != NULL) { /* File page. */
+    lock_acquire(&filesys_lock);
+    file_seek(sup_page->file_info->file, sup_page->file_info->offset);
+    off_t read_size = file_read(sup_page->file_info->file, frame->p_addr, sup_page->file_info->length);
+    lock_release(&filesys_lock);
+    if (read_size != sup_page->file_info->length) { 
+      frame_deallocate(frame);
+      sup_page->frame = NULL;
+      return false;
+    }
+    memset (frame->p_addr + read_size, 0, PGSIZE - read_size);
+  } else {
+    memset (frame->p_addr, 0, PGSIZE); /* Just zeroe page. */
+  }
+
+  if(!install_page (sup_page->v_addr, frame->p_addr, sup_page->writable)) { 
+    frame_deallocate(frame);
+    sup_page->frame = NULL;
+    return false;
+  }
+
+  return true;
+}
+
+void page_suplemental_table_dest (struct hash_elem *elem, void *aux UNUSED) {
+  struct page *p = hash_entry (elem, struct page, elem);
+  page_deallocate(p);
+}
+
+
+
 
 void mmap_deallocate (struct mmap *m) {
   uint8_t *page_addr;
   for (page_addr = m->start_addr; page_addr < m->end_addr; page_addr += PGSIZE) {
     struct page *page = page_lookup(&thread_current()->sup_page_table, page_addr);
-    if (page == NULL || page->file_info == NULL) printf("BUG!!!!!!!\n");
+    ASSERT (page != NULL && page->file_info != NULL);
     page_unmap(page);
     page_remove(page);
     page_deallocate(page);
-   }
+  }
 
   lock_acquire(&filesys_lock);
   file_close(m->file);
@@ -140,52 +206,5 @@ mmap_lookup (struct hash *mmaps, mapid_t mapping)
 void mmap_mapping_table_dest (struct hash_elem *elem, void *aux UNUSED) {
   struct mmap *m = hash_entry (elem, struct mmap, elem);
   mmap_deallocate(m);
-}
-
-
-/* page_load helpers */
-
-/* Adds a mapping from user virtual address UPAGE to kernel
-   virtual address KPAGE to the page table.
-   If WRITABLE is true, the user process may modify the page;
-   otherwise, it is read-only.
-   UPAGE must not already be mapped.
-   KPAGE should probably be a page obtained from the user pool
-   with palloc_get_page().
-   Returns true on success, false if UPAGE is already mapped or
-   if memory allocation fails. */
-static bool
-install_page (void *upage, void *kpage, bool writable)
-{
-  struct thread *t = thread_current ();
-
-  /* Verify that there's not already a page at that virtual
-     address, then map our page there. */
-  return (pagedir_get_page (t->pagedir, upage) == NULL
-          && pagedir_set_page (t->pagedir, upage, kpage, writable));
-}
-
-/*
- * Loads content of the virtual page in memory.
- * Exits current process if loading fails.
- */
-void page_load (struct page *sup_page) {
-  ASSERT(sup_page->frame == NULL);
-
-  struct frame *frame = frame_allocate(sup_page);
-  if (frame == NULL) { printf("Page Load: frame is null\n"); thread_exit(); }
-
-  if(!install_page (sup_page->v_addr, frame->p_addr, sup_page->writable)) { printf("Page Load: page install\n"); thread_exit(); }
-
-  if (sup_page->file_info != NULL) { /* File page. */
-    lock_acquire(&filesys_lock);
-    file_seek(sup_page->file_info->file, sup_page->file_info->offset);
-    off_t read_size = file_read(sup_page->file_info->file, frame->p_addr, sup_page->file_info->length);
-    lock_release(&filesys_lock);
-    if (read_size != sup_page->file_info->length) { printf("Page Load: read size\n"); thread_exit(); }
-    memset (frame->p_addr + read_size, 0, PGSIZE - read_size);
-  } else {
-    memset (frame->p_addr, 0, PGSIZE); /* Just zeroe page. */
-  }
 }
 

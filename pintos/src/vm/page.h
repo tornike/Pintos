@@ -31,6 +31,8 @@ unsigned page_hash (const struct hash_elem*, void* UNUSED);
 bool page_less (const struct hash_elem*, const struct hash_elem*, void* UNUSED);
 struct page *page_lookup (struct hash*, void *);
 void page_unmap(struct page*);
+bool page_load (struct page*);
+void page_suplemental_table_dest (struct hash_elem*, void*);
 
 
 /* Memory mapping */
@@ -52,9 +54,6 @@ unsigned mmap_hash (const struct hash_elem*, void* UNUSED);
 bool mmap_less (const struct hash_elem*, const struct hash_elem*, void* UNUSED);
 struct mmap *mmap_lookup (struct hash*, mapid_t);
 void mmap_mapping_table_dest (struct hash_elem*, void*);
-
-
-void page_load (struct page*);
 
 
 #endif

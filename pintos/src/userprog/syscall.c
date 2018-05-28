@@ -359,7 +359,7 @@ mmap_handler (struct intr_frame *f) // memory leak.
 
   /* Arguments */
   int fd = args[1];
-  void *addr = args[2];
+  void *addr = (void*)args[2];
 
   if (fd <= 1 || fd >= MAX_FILE_COUNT || addr == NULL) {
     f->eax = MAP_FAILED;
@@ -377,15 +377,6 @@ mmap_handler (struct intr_frame *f) // memory leak.
   if (file == NULL || file_size <= 0 || pg_ofs(addr) != 0) {
     f->eax = MAP_FAILED;
     return;
-  }  
-
-  uint8_t *temp = addr;
-  while (temp < addr + file_size) {
-    if (page_lookup(&curr->sup_page_table, temp) != NULL) {
-      f->eax = MAP_FAILED;
-      return;
-    }
-    temp += PGSIZE;
   }
 
   struct mmap *m = malloc(sizeof(struct mmap));
@@ -393,19 +384,28 @@ mmap_handler (struct intr_frame *f) // memory leak.
     f->eax = MAP_FAILED;
     return;
   }
-
   m->mapping = page_get_mapid();
   m->file = file;
+
   m->start_addr = addr;
+  m->end_addr = addr;
 
   off_t offset = 0;
   size_t read_bytes = file_size;
   while (read_bytes != 0) {
     size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
 
+    /* Check that address is not mapped */
+    if (page_lookup(&curr->sup_page_table, m->end_addr) != NULL) {
+      mmap_deallocate(m);
+      f->eax = MAP_FAILED;
+      return;
+    }
+
     /* Setup file info */
     struct file_info *file_info = malloc(sizeof(struct file_info));
     if (file_info == NULL) {
+      mmap_deallocate(m);
       f->eax = MAP_FAILED;
       return;
     }
@@ -414,18 +414,18 @@ mmap_handler (struct intr_frame *f) // memory leak.
     file_info->length = page_read_bytes;
 
     /* Get virtual page of memory */
-    struct page *page = page_allocate(addr, true, file_info);
+    struct page *page = page_allocate(m->end_addr, true, file_info);
     if (page == NULL) {
+      mmap_deallocate(m);
       f->eax = MAP_FAILED;
       return;
     }
 
     read_bytes -= page_read_bytes;
     offset += page_read_bytes;
-    addr += PGSIZE;
+    m->end_addr += PGSIZE;
   }
     
-  m->end_addr = addr;
   hash_insert(&curr->mapping_table, &m->elem);
 
   f->eax = m->mapping;

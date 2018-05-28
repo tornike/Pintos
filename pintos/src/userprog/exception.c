@@ -138,7 +138,8 @@ stack_grow (void *v_addr) {
     curr->saved_sp -= PGSIZE;
   }
   
-  page_load(u_page);
+  if (!page_load(u_page))
+    kill_process ();
 }
 
 
@@ -196,7 +197,8 @@ page_fault (struct intr_frame *f)
     else
       kill_process ();
   } else
-    page_load(u_page);
+    if (!page_load(u_page))
+      kill_process();
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to

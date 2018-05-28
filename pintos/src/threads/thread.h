@@ -125,7 +125,6 @@ struct thread
     struct semaphore status_ready;      /* Signal parent to take status */
 
     struct hash sup_page_table;
-
     uint8_t *saved_sp;                  /* First unmaped page of stack, used for stack growth in page fault handler */
     struct hash mapping_table;
 #endif

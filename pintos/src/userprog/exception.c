@@ -6,7 +6,6 @@
 #include "threads/thread.h"
 #include "vm/page.h"
 #include "threads/vaddr.h"
-#include "threads/malloc.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -126,34 +125,20 @@ can_stack_grow (void *esp, void *fault_addr) {
           || fault_addr >= esp);
 }
 
-static bool
+static void
 stack_grow (void *v_addr) {
-  struct thread *curr = thread_current ();
+  struct thread *curr = thread_current();
     
   struct page *u_page = NULL;
   while (curr->saved_sp != (uint8_t *)v_addr - PGSIZE) {
-    u_page = malloc(sizeof(struct page));
+    u_page = page_allocate (curr->saved_sp, true, NULL);
     if (u_page == NULL)
-      return false;
-    
-    /* Prepare virtual page. */
-    u_page->v_addr = curr->saved_sp;
-    u_page->frame = NULL;
-    u_page->writable = true;
-    u_page->file_info = NULL;
-
-    hash_insert(&thread_current()->sup_page_table, &u_page->elem);
+      kill_process ();
 
     curr->saved_sp -= PGSIZE;
   }
   
-  if(!load_page (u_page)) {
-    printf("Page Loading Failed\n");
-    free(u_page);
-    return false;
-  }
-
-  return true;
+  page_load(u_page);
 }
 
 
@@ -204,20 +189,14 @@ page_fault (struct intr_frame *f)
 
   /* vaddr is in user space and page is not_present */
   void *v_addr = pg_round_down(fault_addr);
-  struct page *u_page = page_lookup(&thread_current ()->sup_page_table, v_addr);
+  struct page *u_page = page_lookup(&thread_current()->sup_page_table, v_addr);
   if (u_page == NULL) {
-    if (user && can_stack_grow(f->esp, fault_addr)) {
-      if (!stack_grow (v_addr))
-        kill_process ();
-    } else {
+    if (user && can_stack_grow(f->esp, fault_addr))
+      stack_grow (v_addr);
+    else
       kill_process ();
-    }
-  } else {
-    if(!load_page (u_page)) {
-      printf("Page Loading Failed\n");
-      kill_process();
-    }
-  }
+  } else
+    page_load(u_page);
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to

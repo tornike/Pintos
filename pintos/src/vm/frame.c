@@ -1,6 +1,5 @@
 #include "vm/frame.h"
-#include "userprog/pagedir.h"
-#include <stdio.h>
+#include "threads/malloc.h"
 
 
 void frame_init() {
@@ -8,39 +7,25 @@ void frame_init() {
     lock_init(&frame_lock);
 }
 
+struct frame* frame_allocate (struct page *u_page) {
+    struct frame *frame = malloc(sizeof(struct frame));
+    if (frame == NULL) return NULL;
+    
+    frame->p_addr = palloc_get_page (PAL_USER);
+    if (frame->p_addr == NULL) { PANIC("Kernel Bug in frame_allocate: NO SPACE"); }
+    frame->u_page = u_page;
+    frame->pinned = false;
 
-static bool install_page (void *upage, void *kpage, bool writable);
+    u_page->frame = frame;
 
+    list_push_back(&frame_table, &frame->elem);
 
-bool frame_allocate (struct frame *frame, enum palloc_flags flags) {
-    bool result = false;
-    frame->p_addr = palloc_get_page (flags);
-    lock_acquire(&frame_lock);
-    if (frame->p_addr == NULL) { printf("NO SPACEEEE\n"); return false; } // no space eviction.
-    result = install_page (frame->u_page->v_addr, frame->p_addr, frame->u_page->writable);
-    lock_release(&frame_lock);
-    if (!result) printf("Install page failed\n");
-    return result;
+    return frame;
 }
 
-
-
-/* Adds a mapping from user virtual address UPAGE to kernel
-   virtual address KPAGE to the page table.
-   If WRITABLE is true, the user process may modify the page;
-   otherwise, it is read-only.
-   UPAGE must not already be mapped.
-   KPAGE should probably be a page obtained from the user pool
-   with palloc_get_page().
-   Returns true on success, false if UPAGE is already mapped or
-   if memory allocation fails. */
-static bool
-install_page (void *upage, void *kpage, bool writable)
-{
-  struct thread *t = thread_current ();
-
-  /* Verify that there's not already a page at that virtual
-     address, then map our page there. */
-  return (pagedir_get_page (t->pagedir, upage) == NULL
-          && pagedir_set_page (t->pagedir, upage, kpage, writable));
+void frame_deallocate (struct frame *frame) {
+    palloc_free_page(frame->p_addr);
+    list_remove(&frame->elem);
+    free(frame);
 }
+

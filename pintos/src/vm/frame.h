@@ -13,7 +13,6 @@ struct lock frame_lock;
 struct frame {
     uint8_t *p_addr; /* Physical address of the page */
     struct page *u_page; /* Pointer to user suplemental page */
-    // pd ????
     bool pinned;
 
     struct list_elem elem;
@@ -21,7 +20,8 @@ struct frame {
 
 
 void frame_init(void);
-bool frame_allocate (struct frame*, enum palloc_flags);
+struct frame* frame_allocate (struct page*);
+void frame_deallocate (struct frame*);
 
 
 #endif

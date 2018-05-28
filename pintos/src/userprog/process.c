@@ -165,6 +165,8 @@ process_exit (void)
     e = list_remove(&child->child_elem);
   }
 
+  hash_destroy(&cur->mapping_table, mmap_mapping_table_dest);
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -469,33 +471,25 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
          and zero the final PAGE_ZERO_BYTES bytes. */
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
-
-      /* Get virtual page of memory. */
-      struct page *page = malloc(sizeof(struct page));
-      if (page == NULL)
-        return false;
       
       struct file_info* f_info = NULL;
       if (page_read_bytes != 0) {
         f_info = malloc(sizeof(struct file_info));
-        if (f_info == NULL) {
-          free(page);
+        if (f_info == NULL)
           return false;
-        }
 
-        /* Prepare file_info page. */
+        /* Prepare file_info */
         f_info->file = file;
         f_info->offset = ofs;
         f_info->length = page_read_bytes;
       }
-      
-      /* Prepare virtual page. */
-      page->v_addr = upage;
-      page->frame = NULL;
-      page->writable = writable;
-      page->file_info = f_info;
 
-      hash_insert(&thread_current()->sup_page_table, &page->elem);
+      /* Get virtual page of memory */
+      struct page *page = page_allocate(upage, writable, f_info);
+      if (page == NULL) {
+        free(f_info);
+        return false;
+      }
       
       /* Advance. */
       ofs += page_read_bytes;
@@ -522,23 +516,15 @@ setup_stack (void **esp, void *argument_data_)
     argv[argc] = token;
 
   /* Get virtual page of memory. */
-  struct page *page = malloc(sizeof(struct page));
+  struct page *page = page_allocate(((uint8_t *) PHYS_BASE) - PGSIZE, true, NULL);
 
   if (page != NULL)
     {
-      /* Prepare virtual page. */
-      page->v_addr = ((uint8_t *) PHYS_BASE) - PGSIZE;
-      page->frame = NULL;
-      page->writable = true;
-      page->file_info = NULL;
-
-      success = load_page(page);
+      page_load(page);
+      success = true;
       if (success) 
-      {
-        struct thread *curr = thread_current ();
-        hash_insert(&curr->sup_page_table, &page->elem);
-        
-        curr->saved_sp = page->v_addr - PGSIZE; /* Save next unmaped page of stack */
+      { 
+        thread_current()->saved_sp = page->v_addr - PGSIZE; /* Save next unmaped page of stack */
 
         int i;
         *esp = PHYS_BASE;

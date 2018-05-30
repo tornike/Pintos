@@ -191,11 +191,14 @@ page_fault (struct intr_frame *f)
   /* vaddr is in user space and page is not_present */
   void *v_addr = pg_round_down(fault_addr);
   struct page *u_page = page_lookup(&thread_current()->sup_page_table, v_addr);
+  //printf("%u, %u\n", fault_addr, v_addr);
   if (u_page == NULL) {
     if (user && can_stack_grow(f->esp, fault_addr))
       stack_grow (v_addr);
-    else
+    else {
+      //printf("Addr: %u User: %u STACK: %u\n", v_addr, user, f->esp);
       kill_process ();
+    }
   } else
     if (!page_load(u_page))
       kill_process();

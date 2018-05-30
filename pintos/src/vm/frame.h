@@ -6,7 +6,7 @@
 #include "threads/palloc.h"
 #include "threads/synch.h"
 
-struct list frame_table;
+struct lock frame_lock;
 
 struct frame {
   uint8_t *p_addr; /* Physical address of the page */

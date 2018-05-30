@@ -13,14 +13,18 @@
 struct page *page_allocate (uint8_t *v_addr, bool writable, struct file_info *file_info) {
   struct page *page = malloc(sizeof(struct page));
   if (page == NULL) return NULL;
+
+  struct thread *curr = thread_current();
   
   /* Prepare virtual page */
   page->v_addr = v_addr;
   page->frame = NULL;
+  page->pagedir = curr->pagedir;
   page->writable = writable;
   page->file_info = file_info;
+  page->swap_slot = -1;
 
-  hash_insert(&thread_current()->sup_page_table, &page->elem);
+  hash_insert(&curr->sup_page_table, &page->elem);
   return page;
 }
 
@@ -116,8 +120,14 @@ bool page_load (struct page *sup_page) {
 
   struct frame *frame = frame_allocate(sup_page);
   ASSERT (frame != NULL);
+  sup_page->frame = frame;
 
-  if (sup_page->file_info != NULL) { /* File page. */
+  lock_acquire(&frame_lock);
+  if (sup_page->swap_slot != -1) {
+    swap_in(sup_page->swap_slot, frame->p_addr);
+    //printf("SWAP IN: %u\n", sup_page->v_addr);
+    sup_page->swap_slot = -1;
+  } else if (sup_page->file_info != NULL) { /* File page. */
     lock_acquire(&filesys_lock);
     file_seek(sup_page->file_info->file, sup_page->file_info->offset);
     off_t read_size = file_read(sup_page->file_info->file, frame->p_addr, sup_page->file_info->length);
@@ -137,7 +147,7 @@ bool page_load (struct page *sup_page) {
     sup_page->frame = NULL;
     return false;
   }
-
+  lock_release(&frame_lock);
   return true;
 }
 

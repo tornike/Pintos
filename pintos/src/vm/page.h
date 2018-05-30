@@ -2,9 +2,10 @@
 #define VM_PAGE_H
 
 #include <inttypes.h>
-#include "vm/frame.h"
-#include "filesys/file.h"
 #include <hash.h>
+#include "vm/frame.h"
+#include "vm/swap.h"
+#include "filesys/file.h"
 
 /* Suplemental page table */
 
@@ -15,10 +16,12 @@ struct file_info {
 };
 
 struct page {
-    uint8_t *v_addr; /* User space page address. */
-    struct frame *frame; /* Pointer to the frame which this page holds. */
+    uint8_t *v_addr;        /* User space page address. */
+    struct frame *frame;    /* Pointer to the frame which this page holds. */
+    uint32_t *pagedir;      /* Page directory. */
     bool writable;
     struct file_info *file_info;
+    swap_slot_t swap_slot;
 
     struct hash_elem elem;
 };

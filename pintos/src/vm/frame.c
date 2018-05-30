@@ -1,6 +1,7 @@
 #include "vm/frame.h"
 #include "threads/malloc.h"
 
+struct lock frame_lock;
 
 void frame_init() {
   list_init(&frame_table);
@@ -18,14 +19,20 @@ struct frame* frame_allocate (struct page *u_page) {
 
   u_page->frame = frame;
 
+  lock_acquire(&frame_lock);
   list_push_back(&frame_table, &frame->elem);
+  lock_release(&frame_lock);
 
   return frame;
 }
 
 void frame_deallocate (struct frame *frame) {
   palloc_free_page(frame->p_addr);
+
+  lock_acquire(&frame_lock);
   list_remove(&frame->elem);
+  lock_release(&frame_lock);
+
   free(frame);
 }
 

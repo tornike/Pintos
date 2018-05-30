@@ -13,6 +13,7 @@
 #include "userprog/process.h"
 #include "userprog/pagedir.h"
 #include "vm/page.h"
+#include "vm/mmap.h"
 
 #define PIECE_SIZE 128  /* Size of chunk written on console. */
 

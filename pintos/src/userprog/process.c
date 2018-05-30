@@ -21,6 +21,7 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "vm/page.h"
+#include "vm/mmap.h"
 
 #include "userprog/syscall.h"
 

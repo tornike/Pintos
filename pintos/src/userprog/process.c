@@ -487,6 +487,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
         f_info->file = file;
         f_info->offset = ofs;
         f_info->length = page_read_bytes;
+        f_info->mapped = false;
       }
 
       /* Get virtual page of memory */

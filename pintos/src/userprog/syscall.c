@@ -413,6 +413,7 @@ mmap_handler (struct intr_frame *f) // memory leak.
     file_info->file = file;
     file_info->offset = offset;
     file_info->length = page_read_bytes;
+    file_info->mapped = true;
 
     /* Get virtual page of memory */
     struct page *page = page_allocate(m->end_addr, true, file_info);

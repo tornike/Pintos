@@ -134,7 +134,6 @@ stack_grow (void *v_addr) {
     u_page = page_allocate (curr->saved_sp, true, NULL);
     if (u_page == NULL)
       kill_process ();
-
     curr->saved_sp -= PGSIZE;
   }
   
@@ -183,7 +182,7 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  if (!not_present) { // || is_kernel_vaddr (fault_addr)
+  if (!not_present) {
     if (user || is_user_vaddr(fault_addr)) kill_process();
     kill(f);
   }
@@ -191,14 +190,11 @@ page_fault (struct intr_frame *f)
   /* vaddr is in user space and page is not_present */
   void *v_addr = pg_round_down(fault_addr);
   struct page *u_page = page_lookup(&thread_current()->sup_page_table, v_addr);
-  //printf("%u, %u\n", fault_addr, v_addr);
   if (u_page == NULL) {
     if (user && can_stack_grow(f->esp, fault_addr))
       stack_grow (v_addr);
-    else {
-      //printf("Addr: %u User: %u STACK: %u\n", v_addr, user, f->esp);
+    else
       kill_process ();
-    }
   } else
     if (!page_load(u_page))
       kill_process();

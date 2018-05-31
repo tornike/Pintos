@@ -29,13 +29,13 @@ struct page *page_allocate (uint8_t *v_addr, bool writable, struct file_info *fi
 }
 
 /* 
- * Marks suplemental page address as not present, 
+ * Marks supplemental page address as not present, 
  * Deallocates it and all it's resources.
  * 
  * Before deallocating, this page must be removed from hash table.
  */
 void page_deallocate (struct page *page) {
-  pagedir_clear_page(thread_current()->pagedir, page->v_addr);
+  pagedir_clear_page(page->pagedir, page->v_addr);
   if (page->frame != NULL)
     frame_deallocate(page->frame);
   if (page->file_info != NULL)
@@ -43,7 +43,7 @@ void page_deallocate (struct page *page) {
   free(page);
 }
 
-/* Remove page from suplemental page table */
+/* Remove page from supplemental page table */
 void page_remove (struct page *page) {
   hash_delete(&thread_current()->sup_page_table, &page->elem);
 }
@@ -83,7 +83,7 @@ page_lookup (struct hash *pages, void *address)
 /* Write data back to file if page is dirty */
 void page_unmap(struct page *page) {
   ASSERT (page->file_info != NULL);
-  if (page->frame != NULL && pagedir_is_dirty(thread_current()->pagedir, page->v_addr)) {
+  if (page->frame != NULL && pagedir_is_dirty(page->pagedir, page->v_addr)) {
     lock_acquire(&filesys_lock);
     file_seek(page->file_info->file, page->file_info->offset);
     file_write(page->file_info->file, page->frame->p_addr, page->file_info->length);
@@ -123,9 +123,11 @@ bool page_load (struct page *sup_page) {
   sup_page->frame = frame;
 
   lock_acquire(&frame_lock);
+  sup_page->frame->pinned = true;
+  lock_release(&frame_lock);
+
   if (sup_page->swap_slot != -1) {
     swap_in(sup_page->swap_slot, frame->p_addr);
-    //printf("SWAP IN: %u\n", sup_page->v_addr);
     sup_page->swap_slot = -1;
   } else if (sup_page->file_info != NULL) { /* File page. */
     lock_acquire(&filesys_lock);
@@ -147,7 +149,7 @@ bool page_load (struct page *sup_page) {
     sup_page->frame = NULL;
     return false;
   }
-  lock_release(&frame_lock);
+  sup_page->frame->pinned = false;
   return true;
 }
 

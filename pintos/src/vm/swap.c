@@ -7,7 +7,6 @@
 
 struct block* swap_block_device;
 struct bitmap* swap_slots;
-struct lock swap_lock;
 swap_slot_t next_free_slot;
 size_t bmap_size;
 
@@ -18,7 +17,6 @@ void swap_init(void) {
   swap_block_device = block_get_role(BLOCK_SWAP);
   bmap_size = block_size(swap_block_device) / BLOCKS_IN_PAGE;
   swap_slots = bitmap_create(bmap_size);
-  lock_init(&swap_lock);
 }
 
 swap_slot_t swap_out(void *p_addr) {

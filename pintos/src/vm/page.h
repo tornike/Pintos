@@ -13,6 +13,7 @@ struct file_info {
     struct file *file;
     off_t offset;
     off_t length;
+    bool mapped;
 };
 
 struct page {

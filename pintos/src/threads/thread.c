@@ -655,13 +655,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->block_lock = NULL;
 
 #ifdef USERPROG
-  int i;
-  for(i = 0; i < MAX_FILE_COUNT; i++)
-    t->file_descriptors[i] = NULL;
-  t->next_free_fd = 2;
-
   list_init(&t->children);
-  t->exit_status = -1;
   sema_init(&t->wait_for_parent, 0);
   sema_init(&t->status_ready, 0);
 #endif

@@ -12,7 +12,7 @@
  */
 struct page *page_allocate (uint8_t *v_addr, bool writable, struct file_info *file_info) {
   struct page *page = malloc(sizeof(struct page));
-  if (page == NULL) return NULL;
+  if (page == NULL) PANIC("page_allocate: Kernel out of memory!");
 
   struct thread *curr = thread_current();
   

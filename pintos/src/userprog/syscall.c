@@ -12,6 +12,7 @@
 #include "devices/input.h"
 #include "userprog/process.h"
 #include "userprog/pagedir.h"
+#include "userprog/files.h"
 #include "vm/page.h"
 #include "vm/mmap.h"
 
@@ -140,7 +141,7 @@ write_handler (struct intr_frame *f)
     putbuf(ptr, size);
     f->eax = size_copy;
   } else {
-    struct file* file = thread_current()->file_descriptors[fd];
+    struct file* file = files_lookup(&thread_current()->opened_files_table, fd)->file;
     if (file == NULL) exit_helper(-1);
     lock_acquire(&filesys_lock);
     f->eax = file_write(file, buffer, size);
@@ -172,7 +173,7 @@ read_handler (struct intr_frame *f)
       ((uint8_t*)buffer)[i] = input_getc();
     f->eax = size;
   } else {
-    struct file* file = thread_current()->file_descriptors[fd];
+    struct file* file = files_lookup(&thread_current()->opened_files_table, fd)->file;
     if (file == NULL) f->eax = -1;
     else {
       lock_acquire(&filesys_lock);
@@ -195,7 +196,7 @@ seek_handler (struct intr_frame* f)
 
   if (fd < 0 || fd >= MAX_FILE_COUNT) exit_helper(-1);
 
-  struct file* file = thread_current()->file_descriptors[fd];
+  struct file* file = files_lookup(&thread_current()->opened_files_table, fd)->file;
   if (file == NULL) exit_helper(-1);
 
   lock_acquire(&filesys_lock);
@@ -215,7 +216,7 @@ tell_handler (struct intr_frame* f)
 
   if (fd < 0 || fd >= MAX_FILE_COUNT) exit_helper(-1);
 
-  struct file* file = thread_current()->file_descriptors[fd];
+  struct file* file = files_lookup(&thread_current()->opened_files_table, fd)->file;
   if (file == NULL) exit_helper(-1);
 
   lock_acquire(&filesys_lock);
@@ -235,7 +236,7 @@ filesize_handler (struct intr_frame* f)
 
   if (fd < 0 || fd >= MAX_FILE_COUNT) exit_helper(-1);
 
-  struct file* file = thread_current()->file_descriptors[fd];
+  struct file* file = files_lookup(&thread_current()->opened_files_table, fd)->file;
   if (file == NULL) exit_helper(-1);
 
   lock_acquire(&filesys_lock);
@@ -263,14 +264,8 @@ open_handler (struct intr_frame* f)
     f->eax = -1;
     return;
   }
-  struct thread* curr = thread_current();
-  int fd = curr->next_free_fd;
-  curr->file_descriptors[fd] = file;
-  while(curr->next_free_fd != MAX_FILE_COUNT - 1) {
-    curr->next_free_fd++;
-    if (curr->file_descriptors[curr->next_free_fd] == NULL) break;
-  }
-  f->eax = fd;
+
+  f->eax = files_get_descriptor(file);
 }
 
 static void 
@@ -285,16 +280,7 @@ close_handler (struct intr_frame* f)
 
   if (fd < 0 || fd >= MAX_FILE_COUNT) return;
 
-  struct thread* curr = thread_current();
-  struct file* file = curr->file_descriptors[fd];
-  if (file == NULL) return;
-
-  lock_acquire(&filesys_lock);
-  file_close(file);
-  lock_release(&filesys_lock);
-
-  curr->file_descriptors[fd] = NULL;
-  curr->next_free_fd = fd;
+  files_remove(fd);
 }
 
 static void 
@@ -369,7 +355,7 @@ mmap_handler (struct intr_frame *f) // memory leak.
   struct thread *curr = thread_current();
 
   lock_acquire(&filesys_lock);  
-  struct file *file = file_reopen(curr->file_descriptors[fd]);
+  struct file *file = file_reopen(files_lookup(&thread_current()->opened_files_table, fd)->file);
   size_t file_size = file_length(file);
   lock_release(&filesys_lock);
 
@@ -380,17 +366,7 @@ mmap_handler (struct intr_frame *f) // memory leak.
     return;
   }
 
-  struct mmap *m = malloc(sizeof(struct mmap));
-  if (m == NULL) {
-    f->eax = MAP_FAILED;
-    return;
-  }
-  m->mapping = page_get_mapid();
-  m->file = file;
-
-  m->start_addr = addr;
-  m->end_addr = addr;
-
+  struct mmap *m = mmap_allocate(file, addr);
   off_t offset = 0;
   size_t read_bytes = file_size;
   while (read_bytes != 0) {
@@ -416,12 +392,7 @@ mmap_handler (struct intr_frame *f) // memory leak.
     file_info->mapped = true;
 
     /* Get virtual page of memory */
-    struct page *page = page_allocate(m->end_addr, true, file_info);
-    if (page == NULL) {
-      mmap_deallocate(m);
-      f->eax = MAP_FAILED;
-      return;
-    }
+    page_allocate(m->end_addr, true, file_info);
 
     read_bytes -= page_read_bytes;
     offset += page_read_bytes;

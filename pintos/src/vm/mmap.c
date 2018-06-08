@@ -5,10 +5,32 @@
 #include "threads/malloc.h"
 #include "userprog/syscall.h" // for filesys_lock
 
+
+static int get_mapid (void) {
+  struct thread *t = thread_current ();
+  int id = t->next_free_mapid++;
+  
+  while(mmap_lookup(&t->mapping_table, t->next_free_mapid) != NULL)
+    t->next_free_mapid++;
+  return id;
+}
+
+void* mmap_allocate (struct file *file, uint8_t *start_addr) {
+  struct mmap *m = malloc(sizeof(struct mmap));
+  if (m == NULL) PANIC("mmap_allocate: Kernel out of memory!");
+  m->mapping = get_mapid();
+  m->file = file;
+
+  m->start_addr = start_addr;
+  m->end_addr = start_addr;
+  return m;
+}
+
 void mmap_deallocate (struct mmap *m) {
+  struct thread *t = thread_current ();
   uint8_t *page_addr;
   for (page_addr = m->start_addr; page_addr < m->end_addr; page_addr += PGSIZE) {
-    struct page *page = page_lookup(&thread_current()->sup_page_table, page_addr);
+    struct page *page = page_lookup(&t->sup_page_table, page_addr);
     ASSERT (page != NULL && page->file_info != NULL);
     page_unmap(page);
     page_remove(page);
@@ -19,17 +41,12 @@ void mmap_deallocate (struct mmap *m) {
   file_close(m->file);
   lock_release(&filesys_lock);
 
+  t->next_free_mapid = m->mapping < t->next_free_mapid ? m->mapping : t->next_free_mapid;
   free(m);
 }
 
 void mmap_remove (struct mmap *m) {
   hash_delete(&thread_current()->mapping_table, &m->elem);
-}
-
-int next_free_mapid = 0;
-
-int page_get_mapid () {
-  return next_free_mapid++;
 }
 
 /* Returns a hash value for mmap m. */
@@ -38,7 +55,7 @@ unsigned mmap_hash (const struct hash_elem *m_, void *aux UNUSED) {
   return hash_bytes (&m->mapping, sizeof(m->mapping));
 }
 
-/* Returns true if mmap a precedes page b. */
+/* Returns true if mmap a precedes mmap b. */
 bool mmap_less (const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED) { 
   const struct mmap *a = hash_entry (a_, struct mmap, elem);
   const struct mmap *b = hash_entry (b_, struct mmap, elem);

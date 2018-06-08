@@ -9,6 +9,7 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
+#include "userprog/files.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -53,7 +54,8 @@ process_execute (const char *file_name)
   sema_init(&argument_data->load_signal, 0);
   argument_data->parent = thread_current();
   tid = thread_create (argument_data->file_name, PRI_DEFAULT, start_process, argument_data);
-  if (tid != TID_ERROR) { /* Kernel thread created. */
+  if (tid != TID_ERROR) {
+    /* Kernel thread created. */
     sema_down(&argument_data->load_signal);
     if(!argument_data->load_success) tid = TID_ERROR;
   }
@@ -69,11 +71,15 @@ start_process (void *argument_data_)
   struct process_argument_data* argument_data = argument_data_;
   struct intr_frame if_;
   bool success;
-
-  /* Initialize process suplemental page table and mapping table. */
-  struct thread *curr = thread_current();
-  hash_init(&curr->sup_page_table, page_hash, page_less, NULL);
-  hash_init(&curr->mapping_table, mmap_hash, mmap_less, NULL);
+  
+  /* Initialize process */
+  struct thread *t = thread_current();
+  t->exit_status = -1;
+  hash_init(&t->sup_page_table, page_hash, page_less, NULL);
+  hash_init(&t->opened_files_table, opened_file_hash, opened_file_less, NULL);
+  t->next_free_fd = 2;
+  hash_init(&t->mapping_table, mmap_hash, mmap_less, NULL);
+  t->next_free_mapid = 0;
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -91,7 +97,7 @@ start_process (void *argument_data_)
     thread_exit ();
   }
 
-  list_push_back(&argument_data->parent->children, &curr->child_elem);
+  list_push_back(&argument_data->parent->children, &t->child_elem);
   sema_up(&argument_data->load_signal);
 
   /* Start the user process by simulating a return from an
@@ -146,20 +152,6 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
-  /* Close all files. */
-  enum intr_level old_level;
-  old_level = intr_disable(); // While file_close is not thread safe.
-  
-  int fd;
-  for (fd = 2; fd < MAX_FILE_COUNT; fd++) {
-    struct file* f = cur->file_descriptors[fd];
-    if (f != NULL)
-      file_close(f);
-  }
-  file_close (cur->exec_file);
-
-  intr_set_level(old_level);
-
   /* 
    * Tell children thar their statuses are not needed any more,
    * so they could be deallocated.
@@ -172,7 +164,12 @@ process_exit (void)
   }
 
   hash_destroy(&cur->mapping_table, mmap_mapping_table_dest);
+  hash_destroy(&cur->opened_files_table, files_open_file_table_dest);
   hash_destroy(&cur->sup_page_table, page_suplemental_table_dest);
+
+  lock_acquire(&filesys_lock);
+  file_close (cur->exec_file);
+  lock_release(&filesys_lock);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -491,11 +488,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       }
 
       /* Get virtual page of memory */
-      struct page *page = page_allocate(upage, writable, f_info);
-      if (page == NULL) {
-        free(f_info);
-        return false;
-      }
+      page_allocate(upage, writable, f_info);
       
       /* Advance. */
       ofs += page_read_bytes;

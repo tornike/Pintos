@@ -17,9 +17,9 @@ struct mmap {
 };
 
 
+void* mmap_allocate (struct file*, uint8_t*);
 void mmap_deallocate (struct mmap*);
 void mmap_remove (struct mmap*);
-int page_get_mapid (void);
 unsigned mmap_hash (const struct hash_elem*, void* UNUSED);
 bool mmap_less (const struct hash_elem*, const struct hash_elem*, void* UNUSED);
 struct mmap *mmap_lookup (struct hash*, mapid_t);

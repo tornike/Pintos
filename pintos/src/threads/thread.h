@@ -113,7 +113,7 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 
-    struct file* file_descriptors[MAX_FILE_COUNT];
+    struct hash opened_files_table;
     int next_free_fd;
 
     struct file* exec_file;
@@ -126,7 +126,9 @@ struct thread
 
     struct hash sup_page_table;
     uint8_t *saved_sp;                  /* First unmaped page of stack, used for stack growth in page fault handler */
+
     struct hash mapping_table;
+    int next_free_mapid;
 #endif
 
     /* Owned by thread.c. */

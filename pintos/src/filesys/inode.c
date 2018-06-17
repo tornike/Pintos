@@ -25,8 +25,9 @@ struct inode_disk
     block_sector_t direct[DIRECT_BLOCKS];
     block_sector_t indirect;
     block_sector_t doubly_indirect;
+    bool is_dir;
     unsigned magic;                     /* Magic number. */
-    uint32_t unused[113];               /* Not used. */
+    uint32_t unused[112];               /* Not used. */
   };
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -228,7 +229,7 @@ static bool inode_grow (struct inode_disk *disk_inode, size_t sectors) {
    Returns true if successful.
    Returns false if memory or disk allocation fails. */
 bool
-inode_create (block_sector_t sector, off_t length)
+inode_create (block_sector_t sector, off_t length, bool is_dir)
 {
   struct inode_disk *disk_inode = NULL;
   bool success = false;
@@ -246,6 +247,7 @@ inode_create (block_sector_t sector, off_t length)
       disk_inode->end = 0;
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
+      disk_inode->is_dir = is_dir;
 
       if (!inode_grow(disk_inode, sectors)) {
         inode_destroy (disk_inode);
@@ -457,4 +459,13 @@ off_t
 inode_length (const struct inode *inode)
 {
   return inode->data.length;
+}
+
+/* Returns if the inode is directory or not. */
+bool
+inode_is_dir (const struct inode *inode) 
+{
+  if (inode == NULL)
+    return false;
+  return inode->data.is_dir;
 }

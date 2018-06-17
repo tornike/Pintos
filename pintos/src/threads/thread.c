@@ -15,6 +15,10 @@
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
+#ifdef FILESYS
+#include "filesys/directory.h"
+#endif
+
 
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
@@ -113,6 +117,7 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+  
 
 }
 
@@ -658,6 +663,10 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init(&t->children);
   sema_init(&t->wait_for_parent, 0);
   sema_init(&t->status_ready, 0);
+#endif
+
+#ifdef FILESYS
+  t->cwd = dir_open_root ();
 #endif
 
   enum intr_level old_level = intr_disable ();  

@@ -6,11 +6,13 @@
 #include "filesys/free-map.h"
 #include "filesys/inode.h"
 #include "filesys/directory.h"
+#include "threads/thread.h"
 
 /* Partition that contains the file system. */
 struct block *fs_device;
 
 static void do_format (void);
+static int get_next_part (char part[NAME_MAX + 1], const char **srcp);
 
 /* Initializes the file system module.
    If FORMAT is true, reformats the file system. */
@@ -45,14 +47,51 @@ filesys_done (void)
    Fails if a file named NAME already exists,
    or if internal memory allocation fails. */
 bool
-filesys_create (const char *name, off_t initial_size)
+filesys_create (const char *name, off_t initial_size, bool is_dir)
 {
   block_sector_t inode_sector = 0;
-  struct dir *dir = dir_open_root ();
-  bool success = (dir != NULL
+  struct dir *dir = NULL;
+  struct inode *inode, *temp;
+
+  if (strlen (name) == 0 || *name == '\0')
+    return false;
+
+  /* Check if given name corresponds to relative
+     or absolute path. */
+  if (name[0] != '/') {
+    struct inode *to_open = dir_get_inode (thread_current ()->cwd);
+    inode = inode_reopen (to_open);
+  } else {
+    /* If the path is absolute we need to start from root directory. */
+    inode = inode_open (ROOT_DIR_SECTOR);
+  }
+
+  char filename[NAME_MAX + 1];
+  strlcpy (filename, name, sizeof(name));
+
+  block_sector_t parent = inode_get_inumber (inode);
+  /* Iterate over directories until we hit a file or the end. */
+  while (get_next_part (filename, &name) > 0) 
+  {
+    dir = dir_open (inode_reopen (inode));
+    bool found = dir_lookup (dir, filename, &temp);
+    dir_close (dir);
+
+    if (!found)
+      break;
+
+    inode_close (inode);
+    inode = temp;
+    parent = inode_get_inumber (inode);
+  }
+
+  if (get_next_part (filename, &name) != 0)
+    return false;
+
+  bool success = (dir_open (inode) != NULL
                   && free_map_allocate (1, &inode_sector)
-                  && inode_create (inode_sector, initial_size)
-                  && dir_add (dir, name, inode_sector));
+                  && inode_create (inode_sector, initial_size, is_dir)
+                  && dir_add (dir, filename, inode_sector));
   if (!success && inode_sector != 0)
     free_map_release (inode_sector, 1);
   dir_close (dir);
@@ -102,4 +141,33 @@ do_format (void)
     PANIC ("root directory creation failed");
   free_map_close ();
   printf ("done.\n");
+}
+
+/* Extracts a file name part from *SRCP into PART, and updates *SRCP so that the
+next call will return the next file name part. Returns 1 if successful, 0 at
+end of string, -1 for a too-long file name part. */
+static int
+get_next_part (char part[NAME_MAX + 1], const char **srcp) {
+    const char *src = *srcp;
+    char *dst = part;
+    
+    /* Skip leading slashes. If it’s all slashes, we’re done. */
+    while (*src == '/')
+        src++;
+    if (*src == '\0')
+        return 0;
+
+    /* Copy up to NAME_MAX character from SRC to DST. Add null terminator. */
+    while (*src != '/' && *src != '\0') {
+        if (dst < part + NAME_MAX)
+            *dst++ = *src;
+        else
+            return -1;
+        src++;
+    }
+    *dst = '\0';
+
+    /* Advance source pointer. */
+    *srcp = src;
+    return 1;
 }

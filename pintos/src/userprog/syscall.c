@@ -296,7 +296,7 @@ create_handler (struct intr_frame* f)
 
   if (!is_valid_string(file_name)) exit_helper(-1);
   lock_acquire(&filesys_lock);
-  f->eax = filesys_create(file_name, initial_size);
+  f->eax = filesys_create(file_name, initial_size, false);
   lock_release(&filesys_lock);
 }
 

@@ -98,6 +98,7 @@ start_process (void *argument_data_)
   }
 
   list_push_back(&argument_data->parent->children, &t->child_elem);
+  t->cwd = argument_data->parent->cwd;
   sema_up(&argument_data->load_signal);
 
   /* Start the user process by simulating a return from an

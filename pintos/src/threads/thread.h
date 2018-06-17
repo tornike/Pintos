@@ -131,6 +131,10 @@ struct thread
     int next_free_mapid;
 #endif
 
+#ifdef FILESYS
+    struct dir *cwd;                    /* Current working directory. */
+#endif
+
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };

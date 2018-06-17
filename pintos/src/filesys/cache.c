@@ -23,20 +23,20 @@ struct block_slot {
 struct block_slot *buffer_cache;
 struct bitmap *free_slots;
 
-struct lock cache_lock;
+//struct lock cache_lock;
 
 
 void cache_init (void) {
   buffer_cache = malloc(sizeof(struct block_slot) * CACHE_CAPACITY);
   int i;
   for (i = 0; i < CACHE_CAPACITY; i++) {
-    buffer_cache[i].sector = block_size(fs_device);  /* At the beginning there must be no cache hits. */
+    buffer_cache[i].sector = -1;  /* At the beginning there must be no cache hits. */
     buffer_cache[i].accessed = false;
     buffer_cache[i].dirty = false;
   }
   
   free_slots = bitmap_create(CACHE_CAPACITY);
-  lock_init(&cache_lock);
+  //lock_init(&cache_lock);
 }
 
 void cache_destroy (void) {
@@ -101,27 +101,25 @@ static int cache_load (block_sector_t sector) {
 void cache_read (block_sector_t sector, int sector_ofs, off_t buffer_ofs, size_t size, void *buffer_) {
   uint8_t *buffer = buffer_;
 
-  lock_acquire(&cache_lock);
+  //lock_acquire(&cache_lock);
   
   int slot_idx = cache_find (sector);
-  //printf("Read: %d %d\n", slot_idx, sector);
   if (slot_idx == -1) { /* Cache miss */
     slot_idx = cache_load (sector);
   }
   memcpy (buffer + buffer_ofs, buffer_cache[slot_idx].data + sector_ofs, size);
   buffer_cache[slot_idx].accessed = true;
 
-  lock_release(&cache_lock);
+  //lock_release(&cache_lock);
 }
 
 
 void cache_write (block_sector_t sector, int sector_ofs, off_t buffer_ofs, size_t size, const void *buffer_) {
   const uint8_t *buffer = buffer_;
 
-  lock_acquire(&cache_lock);
+  //lock_acquire(&cache_lock);
 
   int slot_idx = cache_find (sector);
-  //printf("Write: %d\n", slot_idx);
   if (slot_idx == -1) { /* Cache miss */
     slot_idx = cache_load (sector);
     //memset(buffer_cache[slot_idx].data, 0, BLOCK_SECTOR_SIZE);
@@ -130,5 +128,5 @@ void cache_write (block_sector_t sector, int sector_ofs, off_t buffer_ofs, size_
   buffer_cache[slot_idx].accessed = true;
   buffer_cache[slot_idx].dirty = true;
 
-  lock_release(&cache_lock);
+  //lock_release(&cache_lock);
 }

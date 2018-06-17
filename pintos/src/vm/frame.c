@@ -20,6 +20,7 @@ struct frame* frame_allocate (struct page *u_page) {
     lock_acquire(&frame_lock);
     frame = eviction();
     frame->u_page = u_page;
+    frame->pinned = true;
     lock_release(&frame_lock);
   } else {
     frame = malloc(sizeof(struct frame));

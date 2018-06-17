@@ -130,10 +130,10 @@ bool page_load (struct page *sup_page) {
     swap_in(sup_page->swap_slot, frame->p_addr);
     sup_page->swap_slot = -1;
   } else if (sup_page->file_info != NULL) { /* File page. */
-    lock_acquire(&filesys_lock);
+    //lock_acquire(&filesys_lock);
     file_seek(sup_page->file_info->file, sup_page->file_info->offset);
     off_t read_size = file_read(sup_page->file_info->file, frame->p_addr, sup_page->file_info->length);
-    lock_release(&filesys_lock);
+    //lock_release(&filesys_lock);
     if (read_size != sup_page->file_info->length) { 
       frame_deallocate(frame);
       sup_page->frame = NULL;

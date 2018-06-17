@@ -355,7 +355,6 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
 {
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
-  uint8_t *bounce = NULL;
 
   while (size > 0)
     {
@@ -380,7 +379,6 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       offset += chunk_size;
       bytes_read += chunk_size;
     }
-  free (bounce);
 
   return bytes_read;
 }
@@ -396,19 +394,15 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 {
   const uint8_t *buffer = buffer_;
   off_t bytes_written = 0;
-  uint8_t *bounce = NULL;
 
   if (inode->deny_write_cnt)
     return 0;
 
   off_t new_size = offset + size;
   if (new_size > inode->data.length) {
-    //block_sector_t old_end = inode->data.end;
-    //off_t old_size = inode->data.length;
     size_t needed_sectors = DIV_ROUND_UP(new_size, BLOCK_SECTOR_SIZE) - inode->data.end;
     if (inode_grow(&inode->data, needed_sectors))
       inode->data.length = new_size;
-    //printf("%u %u %u %u\n", old_size, inode->data.length, old_end, inode->data.end);
   }
 
   while (size > 0)
@@ -434,7 +428,6 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       offset += chunk_size;
       bytes_written += chunk_size;
     }
-  free (bounce);
 
   return bytes_written;
 }

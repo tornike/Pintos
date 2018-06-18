@@ -7,6 +7,7 @@
 
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "filesys/directory.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "devices/input.h"
@@ -34,6 +35,11 @@ static void munmap_handler (struct intr_frame *f);
 static void create_handler (struct intr_frame *f);
 static void remove_handler (struct intr_frame *f);
 static void exit_handler (struct intr_frame *f);
+static void readdir_handler (struct intr_frame *f);
+static void mkdir_handler (struct intr_frame *f);
+static void chdir_handler (struct intr_frame *f);
+static void isdir_handler (struct intr_frame *f);
+static void inumber_handler (struct intr_frame *f);
 
 static void exit_helper(int status);
 
@@ -83,7 +89,12 @@ syscall_handler (struct intr_frame *f)
   else if (syscall_num == SYS_MMAP) mmap_handler(f);
   else if (syscall_num == SYS_MUNMAP) munmap_handler(f);
   else if (syscall_num == SYS_REMOVE) remove_handler(f);
+  else if (syscall_num == SYS_MKDIR) mkdir_handler(f);
+  else if (syscall_num == SYS_CHDIR) chdir_handler(f);
+  else if (syscall_num == SYS_READDIR) readdir_handler(f);
   else if (syscall_num == SYS_EXIT) exit_handler(f);
+  else if (syscall_num == SYS_ISDIR) isdir_handler(f);
+  else if (syscall_num == SYS_INUMBER) inumber_handler(f);
   else if (syscall_num == SYS_HALT) shutdown_power_off();
   else if (syscall_num == SYS_PRACTICE) {
     if (!is_valid_ptr(f->esp, sizeof(uint32_t) + sizeof(int))) exit_helper(-1);
@@ -141,7 +152,7 @@ write_handler (struct intr_frame *f)
     putbuf(ptr, size);
     f->eax = size_copy;
   } else {
-    struct file* file = files_lookup(&thread_current()->opened_files_table, fd)->file;
+    struct file* file = files_lookup(fd)->file;
     if (file == NULL) exit_helper(-1);
     lock_acquire(&filesys_lock);
     f->eax = file_write(file, buffer, size);
@@ -173,7 +184,7 @@ read_handler (struct intr_frame *f)
       ((uint8_t*)buffer)[i] = input_getc();
     f->eax = size;
   } else {
-    struct file* file = files_lookup(&thread_current()->opened_files_table, fd)->file;
+    struct file* file = files_lookup(fd)->file;
     if (file == NULL) f->eax = -1;
     else {
       lock_acquire(&filesys_lock);
@@ -196,7 +207,7 @@ seek_handler (struct intr_frame* f)
 
   if (fd < 0 || fd >= MAX_FILE_COUNT) exit_helper(-1);
 
-  struct file* file = files_lookup(&thread_current()->opened_files_table, fd)->file;
+  struct file* file = files_lookup(fd)->file;
   if (file == NULL) exit_helper(-1);
 
   lock_acquire(&filesys_lock);
@@ -216,7 +227,7 @@ tell_handler (struct intr_frame* f)
 
   if (fd < 0 || fd >= MAX_FILE_COUNT) exit_helper(-1);
 
-  struct file* file = files_lookup(&thread_current()->opened_files_table, fd)->file;
+  struct file* file = files_lookup(fd)->file;
   if (file == NULL) exit_helper(-1);
 
   lock_acquire(&filesys_lock);
@@ -236,7 +247,7 @@ filesize_handler (struct intr_frame* f)
 
   if (fd < 0 || fd >= MAX_FILE_COUNT) exit_helper(-1);
 
-  struct file* file = files_lookup(&thread_current()->opened_files_table, fd)->file;
+  struct file* file = files_lookup(fd)->file;
   if (file == NULL) exit_helper(-1);
 
   lock_acquire(&filesys_lock);
@@ -355,7 +366,7 @@ mmap_handler (struct intr_frame *f) // memory leak.
   struct thread *curr = thread_current();
 
   lock_acquire(&filesys_lock);  
-  struct file *file = file_reopen(files_lookup(&thread_current()->opened_files_table, fd)->file);
+  struct file *file = file_reopen(files_lookup(fd)->file);
   size_t file_size = file_length(file);
   lock_release(&filesys_lock);
 
@@ -422,3 +433,73 @@ static void munmap_handler (struct intr_frame *f)
   mmap_deallocate(m);
 }
 
+static void mkdir_handler (struct intr_frame *f)
+{
+  uint32_t *args = ((uint32_t *) f->esp);
+  int arguments_size = sizeof(uint32_t) + sizeof(char*);
+  if (!is_valid_ptr (args, arguments_size)) exit_helper (-1);
+
+  /* Arguments */
+  const char *path = (const char *) args[1];
+  if (!is_valid_string (path)) exit_helper (-1);
+
+  f->eax = filesys_create (path, 0, true);
+}
+
+static void chdir_handler (struct intr_frame *f)
+{
+  uint32_t *args = ((uint32_t *) f->esp);
+  int arguments_size = sizeof(uint32_t) + sizeof(char*);
+  if (!is_valid_ptr (args, arguments_size)) exit_helper (-1);
+
+  /* Arguments */
+  const char *path = (const char *) args[1];
+  if (!is_valid_string (path)) exit_helper (-1);
+
+  f->eax = filesys_change_dir (path);
+}
+
+static void isdir_handler (struct intr_frame *f)
+{
+  uint32_t* args = ((uint32_t*) f->esp);
+  int arguments_size = sizeof(uint32_t) + sizeof(int);
+  if (!is_valid_ptr(args, arguments_size)) exit_helper(-1);
+
+  /* Arguments */
+  int fd = args[1];
+
+  if (fd < 0 || fd >= MAX_FILE_COUNT) exit_helper(-1);
+  f->eax = files_is_directory(fd);
+}
+
+static void inumber_handler (struct intr_frame *f) {
+  uint32_t* args = ((uint32_t*) f->esp);
+  int arguments_size = sizeof(uint32_t) + sizeof(int);
+  if (!is_valid_ptr(args, arguments_size)) exit_helper(-1);
+
+  /* Arguments */
+  int fd = args[1];
+
+  if (fd < 0 || fd >= MAX_FILE_COUNT) exit_helper(-1);
+
+  f->eax = files_get_inumber(fd);
+}
+
+static void readdir_handler (struct intr_frame *f) {
+  uint32_t* args = ((uint32_t*) f->esp);
+  int arguments_size = sizeof(uint32_t) + sizeof(int) + sizeof(char*);
+  if (!is_valid_ptr(args, arguments_size)) exit_helper(-1);
+
+  /* Arguments */
+  int fd = args[1];
+  char *name = (char*)args[2];
+  if (fd < 0 || fd >= MAX_FILE_COUNT) exit_helper(-1);
+  if (!is_valid_string (name)) exit_helper (-1);
+
+  if (!files_is_directory(fd)) {
+    f->eax = false;
+    return;
+  }
+  struct dir *dir = (struct dir*)files_lookup(fd);
+  f->eax = dir_readdir(dir, name);
+}

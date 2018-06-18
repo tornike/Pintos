@@ -37,7 +37,7 @@ tid_t
 process_execute (const char *file_name)
 {
   tid_t tid;
-
+  
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   struct process_argument_data* argument_data = palloc_get_page (0);
@@ -98,7 +98,7 @@ start_process (void *argument_data_)
   }
 
   list_push_back(&argument_data->parent->children, &t->child_elem);
-  t->cwd = argument_data->parent->cwd;
+  t->cwd_sector = argument_data->parent->cwd_sector;
   sema_up(&argument_data->load_signal);
 
   /* Start the user process by simulating a return from an

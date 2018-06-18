@@ -4,12 +4,16 @@
 
 #include "userprog/syscall.h" // for filesys_lock
 
+#include "filesys/inode.h"
+#include "filesys/file.h"
+#include "filesys/directory.h"
+
 
 static int get_fd (void) {
   struct thread *t = thread_current ();
   int fd = t->next_free_fd++;
   
-  while(files_lookup(&t->opened_files_table, t->next_free_fd) != NULL)
+  while(files_lookup(t->next_free_fd) != NULL)
     t->next_free_fd++;
   return fd;
 }
@@ -32,14 +36,20 @@ int files_get_descriptor (struct file *file) {
  * closes it and frees space. 
  */
 void files_remove (int fd) {
-  struct thread *t = thread_current ();
-  struct opened_file *f = files_lookup(&t->opened_files_table, fd);
+  struct opened_file *f = files_lookup(fd);
   if (f == NULL) return;
 
-  lock_acquire(&filesys_lock);
-  file_close(f->file);
-  lock_release(&filesys_lock);
+  if (files_is_directory(fd)) {
+    lock_acquire(&filesys_lock);
+    dir_close((struct dir*)f->file);
+    lock_release(&filesys_lock);
+  } else {
+    lock_acquire(&filesys_lock);
+    file_close(f->file);
+    lock_release(&filesys_lock);
+  }
 
+  struct thread *t = thread_current ();
   hash_delete(&t->opened_files_table, &f->elem);
 
   t->next_free_fd = f->descriptor < t->next_free_fd ? f->descriptor : t->next_free_fd;
@@ -62,8 +72,9 @@ bool opened_file_less (const struct hash_elem *a_, const struct hash_elem *b_, v
 
 /* Returns file indexed as fd. */
 struct opened_file *
-files_lookup (struct hash *opened_files, int fd)
+files_lookup (int fd)
 {
+  struct hash *opened_files = &thread_current()->opened_files_table;
   struct opened_file f;
   struct hash_elem *e;
 
@@ -74,9 +85,23 @@ files_lookup (struct hash *opened_files, int fd)
 
 void files_open_file_table_dest (struct hash_elem *elem, void *aux UNUSED) {
   struct opened_file *f = hash_entry (elem, struct opened_file, elem);
-  lock_acquire(&filesys_lock);
-  file_close(f->file);
-  lock_release(&filesys_lock);
+  if (inode_is_dir(file_get_inode(f->file))) {
+    lock_acquire(&filesys_lock);
+    dir_close((struct dir*)f->file);
+    lock_release(&filesys_lock);
+  } else {
+    lock_acquire(&filesys_lock);
+    file_close(f->file);
+    lock_release(&filesys_lock);
+  }
   free(f);
 }
 
+bool
+files_is_directory (int fd) {
+  return inode_is_dir(file_get_inode(files_lookup(fd)->file));
+}
+
+bool files_get_inumber (int fd) {
+  return inode_get_inumber(file_get_inode(files_lookup(fd)->file));
+}

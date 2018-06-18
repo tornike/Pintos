@@ -17,6 +17,7 @@
 #endif
 #ifdef FILESYS
 #include "filesys/directory.h"
+#include "filesys/filesys.h"
 #endif
 
 
@@ -663,10 +664,8 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init(&t->children);
   sema_init(&t->wait_for_parent, 0);
   sema_init(&t->status_ready, 0);
-#endif
 
-#ifdef FILESYS
-  t->cwd = dir_open_root ();
+  t->cwd_sector = ROOT_DIR_SECTOR;
 #endif
 
   enum intr_level old_level = intr_disable ();  

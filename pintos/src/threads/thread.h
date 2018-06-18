@@ -129,10 +129,8 @@ struct thread
 
     struct hash mapping_table;
     int next_free_mapid;
-#endif
 
-#ifdef FILESYS
-    struct dir *cwd;                    /* Current working directory. */
+    uint32_t cwd_sector;                    /* Current working directory sector. */
 #endif
 
     /* Owned by thread.c. */

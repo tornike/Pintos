@@ -139,7 +139,7 @@ write_handler (struct intr_frame *f)
   const void* buffer = (void*)args[2];
   unsigned size = args[3];
 
-  if (!is_valid_ptr(buffer, size) || fd < 0 || fd >= MAX_FILE_COUNT) exit_helper(-1);
+  if (!is_valid_ptr(buffer, size) || fd < 0) exit_helper(-1);
 
   if (fd == STDOUT_FILENO) {
     char* ptr = (char*)buffer;
@@ -176,7 +176,7 @@ read_handler (struct intr_frame *f)
   void* buffer = (void*)args[2];
   unsigned size = args[3];
 
-  if (fd < 0 || fd >= MAX_FILE_COUNT) {
+  if (fd < 0) {
     f->eax = -1;
     return;
   }
@@ -213,7 +213,7 @@ seek_handler (struct intr_frame* f)
   int fd = args[1];
   unsigned position = args[2];
 
-  if (fd < 0 || fd >= MAX_FILE_COUNT) exit_helper(-1);
+  if (fd < 0) exit_helper(-1);
 
   struct opened_file *of = files_lookup(fd);
   if (!of->is_dir) {
@@ -236,7 +236,7 @@ tell_handler (struct intr_frame* f)
   /* Arguments */
   int fd = args[1];
 
-  if (fd < 0 || fd >= MAX_FILE_COUNT) exit_helper(-1);
+  if (fd < 0) exit_helper(-1);
 
   struct opened_file *of = files_lookup(fd);
   if (of->is_dir) f->eax = -1;
@@ -260,7 +260,7 @@ filesize_handler (struct intr_frame* f)
   /* Arguments */
   int fd = args[1];
 
-  if (fd < 0 || fd >= MAX_FILE_COUNT) exit_helper(-1);
+  if (fd < 0) exit_helper(-1);
 
   struct opened_file *of = files_lookup(fd);
   if (of->is_dir) f->eax = -1;
@@ -309,7 +309,7 @@ close_handler (struct intr_frame* f)
   /* Arguments */
   int fd = args[1];
 
-  if (fd < 0 || fd >= MAX_FILE_COUNT) return;
+  if (fd < 0) return;
 
   files_remove(fd);
 }
@@ -379,7 +379,7 @@ mmap_handler (struct intr_frame *f) // memory leak.
   int fd = args[1];
   void *addr = (void*)args[2];
 
-  if (fd <= 1 || fd >= MAX_FILE_COUNT || addr == NULL) {
+  if (fd <= 1 || addr == NULL) {
     f->eax = MAP_FAILED;
     return;
   }
@@ -488,7 +488,7 @@ static void isdir_handler (struct intr_frame *f)
   /* Arguments */
   int fd = args[1];
 
-  if (fd < 0 || fd >= MAX_FILE_COUNT) exit_helper(-1);
+  if (fd < 0) exit_helper(-1);
   f->eax = files_is_directory(fd);
 }
 
@@ -500,7 +500,7 @@ static void inumber_handler (struct intr_frame *f) {
   /* Arguments */
   int fd = args[1];
 
-  if (fd < 0 || fd >= MAX_FILE_COUNT) exit_helper(-1);
+  if (fd < 0) exit_helper(-1);
 
   f->eax = files_get_inumber(fd);
 }
@@ -513,7 +513,7 @@ static void readdir_handler (struct intr_frame *f) {
   /* Arguments */
   int fd = args[1];
   char *name = (char*)args[2];
-  if (fd < 0 || fd >= MAX_FILE_COUNT) exit_helper(-1);
+  if (fd < 0) exit_helper(-1);
   if (!is_valid_string (name)) exit_helper (-1);
 
   struct opened_file *of = files_lookup(fd);

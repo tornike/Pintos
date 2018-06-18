@@ -39,7 +39,7 @@ void files_remove (int fd) {
   struct opened_file *f = files_lookup(fd);
   if (f == NULL) return;
 
-  if (files_is_directory(fd)) {
+  if (f->is_dir) {
     lock_acquire(&filesys_lock);
     dir_close((struct dir*)f->file);
     lock_release(&filesys_lock);
@@ -85,7 +85,7 @@ files_lookup (int fd)
 
 void files_open_file_table_dest (struct hash_elem *elem, void *aux UNUSED) {
   struct opened_file *f = hash_entry (elem, struct opened_file, elem);
-  if (inode_is_dir(file_get_inode(f->file))) {
+  if (f->is_dir) {
     lock_acquire(&filesys_lock);
     dir_close((struct dir*)f->file);
     lock_release(&filesys_lock);

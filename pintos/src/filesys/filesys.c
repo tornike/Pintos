@@ -179,7 +179,7 @@ filesys_open (const char *name, bool *is_dir)
   
   bool tmp = inode_is_dir(inode);
   if (is_dir != NULL) *is_dir = tmp;
-  return tmp ? dir_open (inode) : file_open (inode);
+  return tmp ? (void*)dir_open (inode) : (void*)file_open (inode);
 }
 
 /* Deletes the file named NAME.

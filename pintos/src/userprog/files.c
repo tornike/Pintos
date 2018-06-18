@@ -4,7 +4,6 @@
 
 #include "userprog/syscall.h" // for filesys_lock
 
-#include "filesys/inode.h"
 #include "filesys/file.h"
 #include "filesys/directory.h"
 
@@ -22,11 +21,12 @@ static int get_fd (void) {
  * Adds file to opened_files_table
  * and returns it's descriptor. 
  */
-int files_get_descriptor (struct file *file) {
+int files_get_descriptor (void *file, bool is_dir) {
   struct opened_file *f = malloc(sizeof(struct opened_file));
   if (f == NULL) return -1;
   f->descriptor = get_fd();
   f->file = file;
+  f->is_dir = is_dir;
   hash_insert(&thread_current()->opened_files_table, &f->elem);
   return f->descriptor;
 }
@@ -99,9 +99,10 @@ void files_open_file_table_dest (struct hash_elem *elem, void *aux UNUSED) {
 
 bool
 files_is_directory (int fd) {
-  return inode_is_dir(file_get_inode(files_lookup(fd)->file));
+  return files_lookup(fd)->is_dir;
 }
 
-bool files_get_inumber (int fd) {
-  return inode_get_inumber(file_get_inode(files_lookup(fd)->file));
+int files_get_inumber (int fd) {
+  struct opened_file *f = files_lookup(fd);
+  return f->is_dir ? dir_get_inumber((struct dir*)f->file) : file_get_inumber((struct file*)f->file);
 }

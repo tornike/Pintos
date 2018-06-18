@@ -129,8 +129,9 @@ struct thread
 
     struct hash mapping_table;
     int next_free_mapid;
-
-    uint32_t cwd_sector;                    /* Current working directory sector. */
+#endif
+#ifdef FILESYS
+    struct inode *cwd_inode;                  /* Current working directory inode. */
 #endif
 
     /* Owned by thread.c. */

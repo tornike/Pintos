@@ -49,15 +49,15 @@ static int
 get_next_part (char part[NAME_MAX + 1], const char **srcp) {
     const char *src = *srcp;
     char *dst = part;
-    
+
     /* Skip leading slashes. If it’s all slashes, we’re done. */
     while (*src == '/')
         src++;
-    if (*src == '\0')
+    if (*src == '\0' || *src == ' ')
         return 0;
 
     /* Copy up to NAME_MAX character from SRC to DST. Add null terminator. */
-    while (*src != '/' && *src != '\0') {
+    while (*src != '/' && *src != '\0' && *src != ' ') {
         if (dst < part + NAME_MAX)
             *dst++ = *src;
         else
@@ -76,43 +76,45 @@ get_next_part (char part[NAME_MAX + 1], const char **srcp) {
  *  1: Found, and it is last part
  */
 static int
-find_file (const char *src, char* filename, struct dir **cwd, struct inode **next_inode) {
+find_file (const char *src, char* filename, struct dir **cwd, struct inode **next_inode)
+{
   int result = -1;
-  *next_inode = NULL;
-  block_sector_t cwd_sector = thread_current()->cwd_sector;
+  *cwd = NULL;
+  struct inode* cwd_inode = thread_current()->cwd_inode;
   /* Check if given name corresponds to relative
       or absolute path. */
   if (src[0] == '/') {
-    *cwd = dir_open_root ();
+    *cwd = dir_open_root();
+    if (src[1] == '\0' || src[1] == ' ') { /* Searched file is / */
+      *next_inode = inode_open (ROOT_DIR_SECTOR);
+      return 1;
+    }
   } else {
-    /* If the path is absolute we need to start from root directory. */
-    *cwd = dir_open (inode_open (cwd_sector));
+    if (cwd_inode == NULL) return result;
+    *cwd = dir_open (inode_reopen(cwd_inode));
   }
-  
+
   filename[0] = '\0';
   
   /* Iterate over directories until we hit a file or the end. */
-  while (true) 
+  while (get_next_part (filename, &src) > 0) 
   { 
-    int part_result = get_next_part (filename, &src);
-    if (part_result == -1) /* Too Big Name. */
-      break;
-    if (part_result == 0) /* Empty */
-      break;
-
+    bool is_last_part = *src == '\0' || *src == ' ';
     bool found = dir_lookup (*cwd, filename, next_inode);
+    //printf("RAIIII %d %s\n", inode_get_inumber(cwd_inode), filename);
+    //printf("%d %d\n", found, is_last_part);
 
     if (found) {
-      if (*src == '\0') {
+      if (is_last_part) {
         result = 1;
         break;
       }
-    } else {
-      if (*src == '\0')
-        result = 0;
+    } else if (is_last_part) {
+      result = 0;
       break;
-    }
-
+    } else/* Invalid Path */
+      break;
+    
     dir_close(*cwd);
     *cwd = dir_open (*next_inode);
   }
@@ -127,7 +129,7 @@ bool
 filesys_create (const char *name, off_t initial_size, bool is_dir)
 { 
   char filename[NAME_MAX + 1];
-  struct dir *parent_dir = 0;
+  struct dir *parent_dir;
   struct inode *inode;
   bool res = find_file(name, filename, &parent_dir, &inode);
   if (res != 0) {
@@ -161,8 +163,8 @@ filesys_create (const char *name, off_t initial_size, bool is_dir)
    otherwise.
    Fails if no file named NAME exists,
    or if an internal memory allocation fails. */
-struct file *
-filesys_open (const char *name)
+void *
+filesys_open (const char *name, bool *is_dir)
 {
   struct dir *dir;
   struct inode *inode;
@@ -170,12 +172,14 @@ filesys_open (const char *name)
   char filename[NAME_MAX + 1];
   int res = find_file (name, filename, &dir, &inode);
   dir_close (dir);
-  if (res == 1) {
-    if (inode_is_dir(inode)) return dir_open (inode);
-    else return file_open (inode);
+  if (res != 1) {
+    inode_close(inode);
+    return NULL;
   }
-  inode_close(inode);
-  return NULL;
+  
+  bool tmp = inode_is_dir(inode);
+  if (is_dir != NULL) *is_dir = tmp;
+  return tmp ? dir_open (inode) : file_open (inode);
 }
 
 /* Deletes the file named NAME.
@@ -185,16 +189,32 @@ filesys_open (const char *name)
 bool
 filesys_remove (const char *name)
 {
-  struct dir *dir;
+  struct dir *parent_dir;
   struct inode *inode;
 
   char filename[NAME_MAX + 1];
-  int res = find_file (name, filename, &dir, &inode);
+  int res = find_file (name, filename, &parent_dir, &inode);
   bool success = false;
-  if (res == 1 && inode_get_inumber(inode) != thread_current()->cwd_sector) {
-    success = dir != NULL && dir_remove (dir, name);
+  if (res == 1) {
+    if (inode_is_dir(inode)) {
+      struct dir* target = dir_open(inode);
+      char tmp[NAME_MAX + 1];
+      bool can_be_removed = !dir_readdir(target, tmp);
+      dir_close(target);
+      if (can_be_removed) { // The directory is empty.
+        block_sector_t sector = inode_get_inumber(inode);
+        struct thread* curr = thread_current();
+        if (sector == inode_get_inumber(curr->cwd_inode)) {
+          inode_close(curr->cwd_inode);
+          curr->cwd_inode = NULL;
+        }
+        success = dir_remove (parent_dir, filename);
+      }
+    } else { // Just File.
+      success = dir_remove (parent_dir, filename);
+    }
   }
-  dir_close (dir);
+  dir_close (parent_dir);
   return success;
 }
 
@@ -218,12 +238,16 @@ filesys_change_dir (const char* path) {
   int res = find_file (path, filename, &dir, &inode);
   dir_close(dir);
   bool success = false;
-  if (res == 1) {
-    if (inode_is_dir(inode)) {
-      thread_current()->cwd_sector = inode_get_inumber(inode);
-      success = true;
-    }
+  if (res == 1 && inode_is_dir(inode)) {
+    struct thread* curr = thread_current();
+    if (curr->cwd_inode != NULL) inode_close(curr->cwd_inode);
+    curr->cwd_inode = inode;
+    success = true;
   }
-  inode_close(inode);
   return success;
+}
+
+int
+filesys_get_inode_number (const void *file) {
+  return inode_get_inumber((const struct inode*)file);
 }

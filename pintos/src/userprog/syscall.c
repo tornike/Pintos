@@ -152,11 +152,15 @@ write_handler (struct intr_frame *f)
     putbuf(ptr, size);
     f->eax = size_copy;
   } else {
-    struct file* file = files_lookup(fd)->file;
-    if (file == NULL) exit_helper(-1);
-    lock_acquire(&filesys_lock);
-    f->eax = file_write(file, buffer, size);
-    lock_release(&filesys_lock);
+    struct opened_file *of = files_lookup(fd);
+    if (of->is_dir) f->eax = -1;
+    else {
+      struct file* file = of->file;
+      if (file == NULL) exit_helper(-1);
+      lock_acquire(&filesys_lock);
+      f->eax = file_write(file, buffer, size);
+      lock_release(&filesys_lock);
+    }
   }
 }
 
@@ -184,12 +188,16 @@ read_handler (struct intr_frame *f)
       ((uint8_t*)buffer)[i] = input_getc();
     f->eax = size;
   } else {
-    struct file* file = files_lookup(fd)->file;
-    if (file == NULL) f->eax = -1;
+    struct opened_file *of = files_lookup(fd);
+    if (of->is_dir) f->eax = -1;
     else {
-      lock_acquire(&filesys_lock);
-      f->eax = file_read(file, buffer, size);
-      lock_release(&filesys_lock);
+      struct file* file = of->file;
+      if (file == NULL) f->eax = -1;
+      else {
+        lock_acquire(&filesys_lock);
+        f->eax = file_read(file, buffer, size);
+        lock_release(&filesys_lock);
+      }
     }
   }
 }
@@ -207,12 +215,15 @@ seek_handler (struct intr_frame* f)
 
   if (fd < 0 || fd >= MAX_FILE_COUNT) exit_helper(-1);
 
-  struct file* file = files_lookup(fd)->file;
-  if (file == NULL) exit_helper(-1);
+  struct opened_file *of = files_lookup(fd);
+  if (!of->is_dir) {
+    struct file* file = of->file;
+    if (file == NULL) exit_helper(-1);
 
-  lock_acquire(&filesys_lock);
-  file_seek(file, position);
-  lock_release(&filesys_lock);
+    lock_acquire(&filesys_lock);
+    file_seek(file, position);
+    lock_release(&filesys_lock);
+  }
 }
 
 static void 
@@ -227,12 +238,16 @@ tell_handler (struct intr_frame* f)
 
   if (fd < 0 || fd >= MAX_FILE_COUNT) exit_helper(-1);
 
-  struct file* file = files_lookup(fd)->file;
-  if (file == NULL) exit_helper(-1);
+  struct opened_file *of = files_lookup(fd);
+  if (of->is_dir) f->eax = -1;
+  else {
+    struct file* file = of->file;
+    if (file == NULL) exit_helper(-1);
 
-  lock_acquire(&filesys_lock);
-  f->eax = file_tell(file);
-  lock_release(&filesys_lock);
+    lock_acquire(&filesys_lock);
+    f->eax = file_tell(file);
+    lock_release(&filesys_lock);
+  }
 }
 
 static void 
@@ -247,12 +262,16 @@ filesize_handler (struct intr_frame* f)
 
   if (fd < 0 || fd >= MAX_FILE_COUNT) exit_helper(-1);
 
-  struct file* file = files_lookup(fd)->file;
-  if (file == NULL) exit_helper(-1);
+  struct opened_file *of = files_lookup(fd);
+  if (of->is_dir) f->eax = -1;
+  else {
+    struct file* file = of->file;
+    if (file == NULL) exit_helper(-1);
 
-  lock_acquire(&filesys_lock);
-  f->eax = file_length(file);
-  lock_release(&filesys_lock);
+    lock_acquire(&filesys_lock);
+    f->eax = file_length(file);
+    lock_release(&filesys_lock);
+  }
 }
 
 static void 
@@ -268,7 +287,8 @@ open_handler (struct intr_frame* f)
   if (!is_valid_string(file_name)) exit_helper(-1);
 
   lock_acquire(&filesys_lock);
-  struct file* file = filesys_open(file_name);
+  bool is_dir;
+  struct file* file = filesys_open(file_name, &is_dir);
   lock_release(&filesys_lock);
 
   if (file == NULL) {
@@ -276,7 +296,7 @@ open_handler (struct intr_frame* f)
     return;
   }
 
-  f->eax = files_get_descriptor(file);
+  f->eax = files_get_descriptor(file, is_dir);
 }
 
 static void 
@@ -496,10 +516,10 @@ static void readdir_handler (struct intr_frame *f) {
   if (fd < 0 || fd >= MAX_FILE_COUNT) exit_helper(-1);
   if (!is_valid_string (name)) exit_helper (-1);
 
-  if (!files_is_directory(fd)) {
-    f->eax = false;
-    return;
+  struct opened_file *of = files_lookup(fd);
+  if (!of->is_dir) {
+    f->eax = -1;
+  } else {
+    f->eax = dir_readdir(of->file, name);
   }
-  struct dir *dir = (struct dir*)files_lookup(fd);
-  f->eax = dir_readdir(dir, name);
 }

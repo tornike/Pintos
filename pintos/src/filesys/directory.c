@@ -38,7 +38,7 @@ dir_open (struct inode *inode)
   if (inode != NULL && dir != NULL)
     {
       dir->inode = inode;
-      dir->pos = 2; // for . and ..
+      dir->pos = 0;
       return dir;
     }
   else
@@ -226,11 +226,18 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
   while (inode_read_at (dir->inode, &e, sizeof e, dir->pos) == sizeof e)
     {
       dir->pos += sizeof e;
-      if (e.in_use)
+      if (e.in_use && strcmp(e.name, ".") != 0 && strcmp(e.name, "..") != 0)
         {
           strlcpy (name, e.name, NAME_MAX + 1);
           return true;
         }
     }
   return false;
+}
+
+
+int
+dir_get_inumber (struct dir *file)
+{
+  return inode_get_inumber(file->inode);
 }

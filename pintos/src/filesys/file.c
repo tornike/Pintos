@@ -94,7 +94,6 @@ file_read_at (struct file *file, void *buffer, off_t size, off_t file_ofs)
 off_t
 file_write (struct file *file, const void *buffer, off_t size)
 {
-  if (inode_is_dir(file->inode)) return -1;
   off_t bytes_written = inode_write_at (file->inode, buffer, size, file->pos);
   file->pos += bytes_written;
   return bytes_written;
@@ -166,4 +165,10 @@ file_tell (struct file *file)
 {
   ASSERT (file != NULL);
   return file->pos;
+}
+
+int
+file_get_inumber (struct file *file)
+{
+  return inode_get_inumber(file->inode);
 }

@@ -334,8 +334,6 @@ inode_close (struct inode *inode)
           free_map_release (inode->sector, 1);
           inode_destroy (&inode->data);
         }
-      else
-        cache_write (inode->sector, 0, 0, BLOCK_SECTOR_SIZE, &inode->data);
       free (inode);
     }
 }
@@ -403,8 +401,10 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   off_t new_size = offset + size;
   if (new_size > inode->data.length) {
     size_t needed_sectors = DIV_ROUND_UP(new_size, BLOCK_SECTOR_SIZE) - inode->data.end;
-    if (inode_grow(&inode->data, needed_sectors))
+    if (inode_grow(&inode->data, needed_sectors)) {
       inode->data.length = new_size;
+      cache_write (inode->sector, 0, 0, BLOCK_SECTOR_SIZE, &inode->data);
+    }
   }
 
   while (size > 0)

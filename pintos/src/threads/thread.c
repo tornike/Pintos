@@ -18,6 +18,7 @@
 #ifdef FILESYS
 #include "filesys/directory.h"
 #include "filesys/filesys.h"
+#include "filesys/inode.h"
 #endif
 
 
@@ -253,8 +254,8 @@ thread_create (const char *name, int priority,
   sf->eip = switch_entry;
   sf->ebp = 0;
 
+  struct thread *running = thread_current();
   if (thread_mlfqs) {
-    struct thread *running = thread_current();
     
     /* Check if this thread should inherit niceness and recent_cpu from its parent. */
     if (running != initial_thread && running != idle_thread) {
@@ -268,13 +269,14 @@ thread_create (const char *name, int priority,
     update_priority(running, NULL);
   }
 
+  t->cwd_inode = running == NULL ? NULL : inode_reopen(running->cwd_inode); /* Get Parents Current Working Directory */
   intr_set_level(old_level);
 
   /* Add to run queue. */
   thread_unblock (t);
 
   /* Check priorities. */
-  if (thread_current()->priority < t->priority )
+  if (running->priority < t->priority )
     thread_yield();
 
   return tid;
@@ -367,6 +369,8 @@ thread_exit (void)
   ASSERT (!intr_context ());
 
   struct thread* curr = thread_current();
+
+  inode_close(curr->cwd_inode);
 
   /* Release all locks. */
   enum intr_level old_level;
@@ -664,8 +668,9 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init(&t->children);
   sema_init(&t->wait_for_parent, 0);
   sema_init(&t->status_ready, 0);
-
-  t->cwd_sector = ROOT_DIR_SECTOR;
+#endif
+#ifdef FILESYS
+  t->cwd_inode = NULL;
 #endif
 
   enum intr_level old_level = intr_disable ();  

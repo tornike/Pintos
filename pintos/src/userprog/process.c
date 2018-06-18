@@ -13,6 +13,7 @@
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
+#include "filesys/inode.h"
 #include "threads/flags.h"
 #include "threads/init.h"
 #include "threads/interrupt.h"
@@ -98,7 +99,6 @@ start_process (void *argument_data_)
   }
 
   list_push_back(&argument_data->parent->children, &t->child_elem);
-  t->cwd_sector = argument_data->parent->cwd_sector;
   sema_up(&argument_data->load_signal);
 
   /* Start the user process by simulating a return from an
@@ -298,7 +298,7 @@ load (void *argument_data_, void (**eip) (void), void **esp)
 
   /* Open executable file. */
   lock_acquire(&filesys_lock); // While file_close is not thread safe.
-  file = filesys_open (argument_data->file_name); 
+  file = filesys_open (argument_data->file_name, NULL); 
   if (file == NULL)
     {
       printf ("load: %s: open failed\n", argument_data->file_name);

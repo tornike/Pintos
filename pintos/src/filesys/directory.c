@@ -5,12 +5,14 @@
 #include "filesys/filesys.h"
 #include "filesys/inode.h"
 #include "threads/malloc.h"
+#include "threads/synch.h"
 
 /* A directory. */
 struct dir
   {
     struct inode *inode;                /* Backing store. */
     off_t pos;                          /* Current position. */
+    struct lock lock;
   };
 
 /* A single directory entry. */
@@ -39,6 +41,7 @@ dir_open (struct inode *inode)
     {
       dir->inode = inode;
       dir->pos = 0;
+      lock_init (&dir->lock);
       return dir;
     }
   else
@@ -153,8 +156,11 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
     return false;
 
   /* Check that NAME is not in use. */
-  if (lookup (dir, name, NULL, NULL))
+  lock_acquire (&dir->lock);
+  if (lookup (dir, name, NULL, NULL)) {
+    lock_release (&dir->lock);
     goto done;
+  }
 
   /* Set OFS to offset of free slot.
      If there are no free slots, then it will be set to the
@@ -173,6 +179,7 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   strlcpy (e.name, name, sizeof e.name);
   e.inode_sector = inode_sector;
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
+  lock_release (&dir->lock);
 
  done:
   return success;
@@ -193,18 +200,26 @@ dir_remove (struct dir *dir, const char *name)
   ASSERT (name != NULL);
 
   /* Find directory entry. */
-  if (!lookup (dir, name, &e, &ofs))
+  lock_acquire (&dir->lock);
+  if (!lookup (dir, name, &e, &ofs)) {
+    lock_release (&dir->lock);
     goto done;
+  }
 
   /* Open inode. */
   inode = inode_open (e.inode_sector);
-  if (inode == NULL)
+  if (inode == NULL) {
+    lock_release (&dir->lock);
     goto done;
+  }
 
   /* Erase directory entry. */
   e.in_use = false;
-  if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e)
+  if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e) {
+    lock_release (&dir->lock);
     goto done;
+  }
+  lock_release (&dir->lock);
 
   /* Remove inode. */
   inode_remove (inode);

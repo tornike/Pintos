@@ -101,8 +101,6 @@ find_file (const char *src, char* filename, struct dir **cwd, struct inode **nex
   { 
     bool is_last_part = *src == '\0' || *src == ' ';
     bool found = dir_lookup (*cwd, filename, next_inode);
-    //printf("RAIIII %d %s\n", inode_get_inumber(cwd_inode), filename);
-    //printf("%d %d\n", found, is_last_part);
 
     if (found) {
       if (is_last_part) {
@@ -112,7 +110,7 @@ find_file (const char *src, char* filename, struct dir **cwd, struct inode **nex
     } else if (is_last_part) {
       result = 0;
       break;
-    } else/* Invalid Path */
+    } else /* Invalid Path */
       break;
     
     dir_close(*cwd);

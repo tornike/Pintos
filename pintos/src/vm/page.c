@@ -84,10 +84,10 @@ page_lookup (struct hash *pages, void *address)
 void page_unmap(struct page *page) {
   ASSERT (page->file_info != NULL);
   if (page->frame != NULL && pagedir_is_dirty(page->pagedir, page->v_addr)) {
-    lock_acquire(&filesys_lock);
+    //lock_acquire(&filesys_lock);
     file_seek(page->file_info->file, page->file_info->offset);
     file_write(page->file_info->file, page->frame->p_addr, page->file_info->length);
-    lock_release(&filesys_lock);
+    //lock_release(&filesys_lock);
   }
 }
 

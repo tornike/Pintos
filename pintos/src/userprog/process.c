@@ -168,9 +168,9 @@ process_exit (void)
   hash_destroy(&cur->opened_files_table, files_open_file_table_dest);
   hash_destroy(&cur->sup_page_table, page_suplemental_table_dest);
 
-  lock_acquire(&filesys_lock);
+  //lock_acquire(&filesys_lock);
   file_close (cur->exec_file);
-  lock_release(&filesys_lock);
+  //lock_release(&filesys_lock);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -297,7 +297,7 @@ load (void *argument_data_, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-  lock_acquire(&filesys_lock); // While file_close is not thread safe.
+  //lock_acquire(&filesys_lock); // While file_close is not thread safe.
   file = filesys_open (argument_data->file_name, NULL); 
   if (file == NULL)
     {
@@ -394,7 +394,7 @@ load (void *argument_data_, void (**eip) (void), void **esp)
     file_deny_write(file);
   } else
     file_close(file);
-  lock_release(&filesys_lock);
+  //lock_release(&filesys_lock);
   return success;
 }
 

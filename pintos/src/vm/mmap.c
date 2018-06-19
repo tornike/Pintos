@@ -37,9 +37,9 @@ void mmap_deallocate (struct mmap *m) {
     page_deallocate(page);
   }
 
-  lock_acquire(&filesys_lock);
+  //lock_acquire(&filesys_lock);
   file_close(m->file);
-  lock_release(&filesys_lock);
+  //lock_release(&filesys_lock);
 
   t->next_free_mapid = m->mapping < t->next_free_mapid ? m->mapping : t->next_free_mapid;
   free(m);

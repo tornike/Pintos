@@ -19,8 +19,6 @@ struct block_slot {
   bool accessed;
   bool dirty;
   uint32_t user_count;
-
-  //struct lock lock;
 };
 
 struct block_slot *buffer_cache;
@@ -37,7 +35,6 @@ void cache_init (void) {
     buffer_cache[i].accessed = false;
     buffer_cache[i].dirty = false;
     buffer_cache[i].user_count = 0;
-    //lock_init(&buffer_cache[i].lock);
   }
   
   free_slots = bitmap_create(CACHE_CAPACITY);
@@ -70,14 +67,12 @@ static void cache_flush (void) {
   lock_acquire(&cache_lock);
   int i = 0;
   for (; i < CACHE_CAPACITY; i++) {
-    //lock_acquire (&buffer_cache[i].lock);
     if (buffer_cache[i].dirty)
       cache_flush_slot (i);
     if (buffer_cache[i].accessed)
       buffer_cache[i].accessed = false;
     if (buffer_cache[i].user_count == 0)
       bitmap_reset (free_slots, i);
-    //lock_release (&buffer_cache[i].lock);
   }
   lock_release(&cache_lock);
 }
@@ -116,11 +111,9 @@ void cache_read (block_sector_t sector, int sector_ofs, off_t buffer_ofs, size_t
   buffer_cache[slot_idx].user_count++;
   lock_release(&cache_lock);
 
-  //lock_acquire (&buffer_cache[slot_idx].lock);
   memcpy (buffer + buffer_ofs, buffer_cache[slot_idx].data + sector_ofs, size);
   buffer_cache[slot_idx].accessed = true;
   buffer_cache[slot_idx].user_count--;
-  //lock_release (&buffer_cache[slot_idx].lock);
 }
 
 
@@ -134,10 +127,8 @@ void cache_write (block_sector_t sector, int sector_ofs, off_t buffer_ofs, size_
   buffer_cache[slot_idx].user_count++;
   lock_release(&cache_lock);
 
-  //lock_acquire (&buffer_cache[slot_idx].lock);
   memcpy (buffer_cache[slot_idx].data + sector_ofs, buffer + buffer_ofs, size);
   buffer_cache[slot_idx].accessed = true;
   buffer_cache[slot_idx].dirty = true;
   buffer_cache[slot_idx].user_count--;
-  //lock_release (&buffer_cache[slot_idx].lock);
 }

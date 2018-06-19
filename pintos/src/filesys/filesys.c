@@ -11,6 +11,8 @@
 /* Partition that contains the file system. */
 struct block *fs_device;
 
+struct lock l;
+
 static void do_format (void);
 static int get_next_part (char part[NAME_MAX + 1], const char **srcp);
 
@@ -31,6 +33,7 @@ filesys_init (bool format)
     do_format ();
 
   free_map_open ();
+  lock_init(&l);
 }
 
 /* Shuts down the file system module, writing any unwritten data
@@ -142,14 +145,13 @@ filesys_create (const char *name, off_t initial_size, bool is_dir)
     free_map_release (inode_sector, 1);
     return false;
   }
-  bool success = true;
-  if (is_dir) {
+  bool success = dir_add (parent_dir, filename, inode_sector);;
+  if (success && is_dir) {
     struct dir* new_dir = dir_open(inode_open (inode_sector));
     success &= (dir_add (new_dir, ".", inode_sector)
                     && dir_add (new_dir, "..", inode_get_inumber(dir_get_inode(parent_dir))));
     dir_close (new_dir);
   }
-  success &= dir_add (parent_dir, filename, inode_sector);
   dir_close (parent_dir);
   if (!success)
     free_map_release (inode_sector, 1);

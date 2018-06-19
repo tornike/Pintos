@@ -3,7 +3,6 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
-#include "userprog/syscall.h" // for filesys_lock
 
 
 static int get_mapid (void) {
@@ -37,9 +36,7 @@ void mmap_deallocate (struct mmap *m) {
     page_deallocate(page);
   }
 
-  //lock_acquire(&filesys_lock);
   file_close(m->file);
-  //lock_release(&filesys_lock);
 
   t->next_free_mapid = m->mapping < t->next_free_mapid ? m->mapping : t->next_free_mapid;
   free(m);

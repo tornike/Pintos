@@ -11,7 +11,6 @@
 /* Partition that contains the file system. */
 struct block *fs_device;
 
-struct lock l;
 
 static void do_format (void);
 static int get_next_part (char part[NAME_MAX + 1], const char **srcp);
@@ -33,7 +32,6 @@ filesys_init (bool format)
     do_format ();
 
   free_map_open ();
-  lock_init(&l);
 }
 
 /* Shuts down the file system module, writing any unwritten data
@@ -179,7 +177,8 @@ filesys_open (const char *name, bool *is_dir)
   
   bool tmp = inode_is_dir(inode);
   if (is_dir != NULL) *is_dir = tmp;
-  return tmp ? (void*)dir_open (inode) : (void*)file_open (inode);
+  void* result = tmp ? (void*)dir_open (inode) : (void*)file_open (inode);
+  return result;
 }
 
 /* Deletes the file named NAME.

@@ -2,8 +2,6 @@
 #include "threads/thread.h"
 #include "threads/malloc.h"
 
-#include "userprog/syscall.h" // for filesys_lock
-
 #include "filesys/file.h"
 #include "filesys/directory.h"
 
@@ -40,13 +38,9 @@ void files_remove (int fd) {
   if (f == NULL) return;
 
   if (f->is_dir) {
-    //lock_acquire(&filesys_lock);
     dir_close((struct dir*)f->file);
-    //lock_release(&filesys_lock);
   } else {
-    //lock_acquire(&filesys_lock);
     file_close(f->file);
-    //lock_release(&filesys_lock);
   }
 
   struct thread *t = thread_current ();
@@ -86,13 +80,9 @@ files_lookup (int fd)
 void files_open_file_table_dest (struct hash_elem *elem, void *aux UNUSED) {
   struct opened_file *f = hash_entry (elem, struct opened_file, elem);
   if (f->is_dir) {
-    //lock_acquire(&filesys_lock);
     dir_close((struct dir*)f->file);
-    //lock_release(&filesys_lock);
   } else {
-    //lock_acquire(&filesys_lock);
     file_close(f->file);
-    //lock_release(&filesys_lock);
   }
   free(f);
 }

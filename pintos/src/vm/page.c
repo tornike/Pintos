@@ -3,7 +3,6 @@
 #include "threads/vaddr.h"
 #include <string.h>
 #include "threads/malloc.h"
-#include "userprog/syscall.h" // for filesys_lock
 #include "userprog/pagedir.h"
 
 /* 
@@ -84,10 +83,8 @@ page_lookup (struct hash *pages, void *address)
 void page_unmap(struct page *page) {
   ASSERT (page->file_info != NULL);
   if (page->frame != NULL && pagedir_is_dirty(page->pagedir, page->v_addr)) {
-    //lock_acquire(&filesys_lock);
     file_seek(page->file_info->file, page->file_info->offset);
     file_write(page->file_info->file, page->frame->p_addr, page->file_info->length);
-    //lock_release(&filesys_lock);
   }
 }
 
@@ -130,10 +127,8 @@ bool page_load (struct page *sup_page) {
     swap_in(sup_page->swap_slot, frame->p_addr);
     sup_page->swap_slot = -1;
   } else if (sup_page->file_info != NULL) { /* File page. */
-    //lock_acquire(&filesys_lock);
     file_seek(sup_page->file_info->file, sup_page->file_info->offset);
     off_t read_size = file_read(sup_page->file_info->file, frame->p_addr, sup_page->file_info->length);
-    //lock_release(&filesys_lock);
     if (read_size != sup_page->file_info->length) { 
       frame_deallocate(frame);
       sup_page->frame = NULL;

@@ -1,7 +1,6 @@
 #include "vm/frame.h"
 #include "threads/malloc.h"
 #include "userprog/pagedir.h"
-#include "userprog/syscall.h" // filesys_lock
 
 struct list frame_table;
 struct lock frame_lock;
@@ -62,10 +61,8 @@ eviction()
         pagedir_clear_page(u_page->pagedir, u_page->v_addr); // Remove page from page directory
         if (u_page->file_info != NULL && u_page->file_info->mapped) { /* Check if it's mapped file page */
           if (is_dirty) { /* write back to file or discard page */
-            //lock_acquire(&filesys_lock);
             file_seek(u_page->file_info->file, u_page->file_info->offset);
             file_write(u_page->file_info->file, frame->p_addr, u_page->file_info->length);
-            //lock_release(&filesys_lock);
           }
         } else { /* Swap */
           u_page->swap_slot = swap_out(frame->p_addr);

@@ -47,7 +47,6 @@ void
 syscall_init (void)
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
-  lock_init(&filesys_lock);
 }
 
 static bool 
@@ -157,9 +156,7 @@ write_handler (struct intr_frame *f)
     else {
       struct file* file = of->file;
       if (file == NULL) exit_helper(-1);
-      //lock_acquire(&filesys_lock);
       f->eax = file_write(file, buffer, size);
-      //lock_release(&filesys_lock);
     }
   }
 }
@@ -194,9 +191,7 @@ read_handler (struct intr_frame *f)
       struct file* file = of->file;
       if (file == NULL) f->eax = -1;
       else {
-        //lock_acquire(&filesys_lock);
         f->eax = file_read(file, buffer, size);
-        //lock_release(&filesys_lock);
       }
     }
   }
@@ -220,9 +215,7 @@ seek_handler (struct intr_frame* f)
     struct file* file = of->file;
     if (file == NULL) exit_helper(-1);
 
-    //lock_acquire(&filesys_lock);
     file_seek(file, position);
-    //lock_release(&filesys_lock);
   }
 }
 
@@ -244,9 +237,7 @@ tell_handler (struct intr_frame* f)
     struct file* file = of->file;
     if (file == NULL) exit_helper(-1);
 
-    //lock_acquire(&filesys_lock);
     f->eax = file_tell(file);
-    //lock_release(&filesys_lock);
   }
 }
 
@@ -268,9 +259,7 @@ filesize_handler (struct intr_frame* f)
     struct file* file = of->file;
     if (file == NULL) exit_helper(-1);
 
-    //lock_acquire(&filesys_lock);
     f->eax = file_length(file);
-    //lock_release(&filesys_lock);
   }
 }
 
@@ -286,10 +275,8 @@ open_handler (struct intr_frame* f)
 
   if (!is_valid_string(file_name)) exit_helper(-1);
 
-  //lock_acquire(&filesys_lock);
   bool is_dir;
   struct file* file = filesys_open(file_name, &is_dir);
-  //lock_release(&filesys_lock);
 
   if (file == NULL) {
     f->eax = -1;
@@ -326,9 +313,8 @@ create_handler (struct intr_frame* f)
   unsigned initial_size = args[2];
 
   if (!is_valid_string(file_name)) exit_helper(-1);
-  //lock_acquire(&filesys_lock);
+
   f->eax = filesys_create(file_name, initial_size, false);
-  //lock_release(&filesys_lock);
 }
 
 static void 
@@ -342,9 +328,8 @@ remove_handler (struct intr_frame* f)
   const char* file_name = (const char*)args[1];
 
   if (!is_valid_string(file_name)) exit_helper(-1);
-  //lock_acquire(&filesys_lock);
+
   f->eax = filesys_remove(file_name);
-  //lock_release(&filesys_lock);
 }
 
 static void
@@ -385,10 +370,8 @@ mmap_handler (struct intr_frame *f) // memory leak.
   }
   struct thread *curr = thread_current();
 
-  //lock_acquire(&filesys_lock);  
   struct file *file = file_reopen(files_lookup(fd)->file);
   size_t file_size = file_length(file);
-  //lock_release(&filesys_lock);
 
   if (!is_valid_ptr(addr, file_size)) exit_helper(-1);
 

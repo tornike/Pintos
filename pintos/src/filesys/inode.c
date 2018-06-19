@@ -28,7 +28,6 @@ struct inode_disk
     block_sector_t doubly_indirect;
     bool is_dir;
     unsigned magic;                     /* Magic number. */
-    //uint32_t unused[112];               /* Not used. */
   };
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -298,7 +297,6 @@ inode_open (block_sector_t sector)
 
   /* Initialize. */
   list_push_front (&open_inodes, &inode->elem);
-  lock_release (&inodes_lock);
 
   inode->sector = sector;
   inode->open_cnt = 1;
@@ -306,6 +304,7 @@ inode_open (block_sector_t sector)
   inode->removed = false;
   lock_init (&inode->lock);
   cache_read (inode->sector, 0, 0, BLOCK_SECTOR_SIZE, &inode->data);
+  lock_release (&inodes_lock);
   return inode;
 }
 
@@ -375,17 +374,16 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
 
+  lock_acquire (&inode->lock);
+
   while (size > 0)
     {
       /* Disk sector to read, starting byte offset within sector. */
-      lock_acquire (&inode->lock);
       block_sector_t sector_idx = byte_to_sector (inode, offset);
-      
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
       off_t inode_left = inode_length (inode) - offset;
-      lock_release (&inode->lock);
       int sector_left = BLOCK_SECTOR_SIZE - sector_ofs;
       int min_left = inode_left < sector_left ? inode_left : sector_left;
 
@@ -401,7 +399,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       offset += chunk_size;
       bytes_read += chunk_size;
     }
-
+  lock_release (&inode->lock);
   return bytes_read;
 }
 
@@ -417,10 +415,13 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   const uint8_t *buffer = buffer_;
   off_t bytes_written = 0;
 
-  if (inode->deny_write_cnt)
-    return 0;
-
   lock_acquire (&inode->lock);
+
+  if (inode->deny_write_cnt) {
+    lock_release (&inode->lock);
+    return 0;
+  }
+
   off_t new_size = offset + size;
   if (new_size > inode->data.length) {
     size_t needed_sectors = DIV_ROUND_UP(new_size, BLOCK_SECTOR_SIZE) - inode->data.end;
@@ -429,18 +430,15 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       cache_write (inode->sector, 0, 0, BLOCK_SECTOR_SIZE, &inode->data);
     }
   }
-  lock_release (&inode->lock);
 
   while (size > 0)
     {
       /* Sector to write, starting byte offset within sector. */
-      lock_acquire (&inode->lock);
       block_sector_t sector_idx = byte_to_sector (inode, offset);
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
       off_t inode_left = inode_length (inode) - offset;
-      lock_release (&inode->lock);
       int sector_left = BLOCK_SECTOR_SIZE - sector_ofs;
       int min_left = inode_left < sector_left ? inode_left : sector_left;
 
@@ -456,7 +454,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       offset += chunk_size;
       bytes_written += chunk_size;
     }
-
+  lock_release (&inode->lock);
   return bytes_written;
 }
 
@@ -488,9 +486,7 @@ inode_allow_write (struct inode *inode)
 off_t
 inode_length (const struct inode *inode)
 { 
-  //lock_acquire ((struct lock*)&inode->lock);
   off_t length = inode->data.length;
-  //lock_release ((struct lock*)&inode->lock);
   return length;
 }
 

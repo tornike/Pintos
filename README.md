@@ -1,7 +1,7 @@
-CS162 Group Repository
+CS140 Group Repository
 ======================
 
-This repository contains code for CS162 group projects.
+This repository contains code for CS140 group projects.
 
 **Design documents**
 
